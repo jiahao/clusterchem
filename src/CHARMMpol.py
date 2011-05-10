@@ -4,6 +4,8 @@
 Jiahao Chen <jiahao@mit.edu> 2011-02-18
 
 This script builds heavily upon the QM-MM wrapper scripts of Tim Kowalczyk, Lee-Ping Wang and Shane Yost.
+
+.. TODO:: UNTESTED.
 """
 
 import glob

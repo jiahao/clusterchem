@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 """
-Archiver for adding data into a HDF5 database
+Archives data into a :term:`HDF5` database.
+
+This is a standalone executable requiring :term:`PyTables`
+and the homebrew :py:mod:`QChemIO`.
+
+.. versionadded:: 0.1
 """
 
 from glob import glob
@@ -8,9 +13,7 @@ import numpy
 import sys
 import os.path
 import shutil
-
-Nuke = True #False #True#False#True #Delete files after successful archival
-DoCheckPoint = False
+import argparse
 
 try:
     import tables
@@ -29,25 +32,51 @@ Please check that PYTHONPATH is set correctly.
     exit()
 
 #Internal modules
-from ParseOutput import ParseOutput, Hartree_to_kcal_mol
-
+from ParseOutput import ParseOutput
+from Units import kcal_mol
 
 
 class CHARMM_CARD(tables.IsDescription):
-    #Title = tables.StringAtom(1024)
-    #NumAtoms = tables.UIntAtom()
+    """
+    :term:`PyTables` data structure for storing a :term:`CHARMM card file` in a :term:`HDF5` database.
+
+    .. versionadded:: 0.1
+    """
+    #: Atomic number
     AtomNo = tables.UInt64Col()
+    #: Residue number
     ResidNo = tables.UInt64Col()
+    #: Residue label of up to 4 characters
     Res = tables.StringCol(4)
+    #: Type
     Type = tables.StringCol(4)
+    #: Coordinates
     Coord = tables.Float32Col(shape = 3,)
+    #: SegID
     SegID = tables.StringCol(4)
+    #: ResID
     ResID = tables.StringCol(4)
+    #: Weighting
     Weighting = tables.Float32Col()
+
+    def __init__(self):
+        tables.IsDescription.__init__(self)
 
 
 
 def LoadCHARMM_CARD(h5table, CARDfile):
+    """
+    Reads a :term:`CHARMM card file` and saves it into a :term:`HDF5` database.
+    
+    :argument h5table: Name of :term:`HDF5` table
+    :type h5table: :term:`PyTables` :py:class:`tables.File` object
+    
+    :argument string CARDfile: Name of :term:`CHARMM card file`
+
+    :returns: None
+
+    .. versionadded:: 0.1
+    """
     state = 'title'
     for l in open(CARDfile):
         if state == 'title':
@@ -71,16 +100,35 @@ def LoadCHARMM_CARD(h5table, CARDfile):
             data.append()
             thisnumatoms += 1
 
-    assert thisnumatoms == numatoms, 'Warning, did not read in expected number of atoms'
+    assert thisnumatoms == numatoms, 'Did not read in expected number of atoms.'
     print 'Loaded CHARMM file', CARDfile, 'into', h5table
     h5table.flush()
 
 
 
-def LoadEmUp(path):
-    filename = 'h2pc-data.h5'
+def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, DoCheckPoint = False):
+    """
+    Recursively reads data from all files in a given path and loads it into a
+    :term:`HDF5` database.
+    
+    :argument string path: Path to read data from recursively. (Default: '.')
+    
+    :argument string h5filename: Name of :term:`HDF5` database to create. \
+        or update (Default: 'h2pc-data.h5')
+
+    :argument Boolean Nuke: Delete files after successful archival (Default: False)
+    :argument Boolean DoCheckPoint: Create new check point after successful
+         archival (Default: False)
+
+    :returns: None
+
+    .. TODO :: replace with a real way to test if node exists in Pytables
+    .. TODO :: Failed to detect symlink
+
+    .. versionadded:: 0.1
+    """
     compress = tables.Filters(complevel = 9, complib = 'zlib')
-    h5data = tables.openFile(filename, mode = 'a', filters = compress,
+    h5data = tables.openFile(h5filename, mode = 'a', filters = compress,
         title = 'H2Pc')
     if not h5data.isUndoEnabled(): h5data.enableUndo(filters = compress)
     for root, _, files in os.walk(path):
@@ -232,7 +280,7 @@ def LoadEmUp(path):
                         energyarray = h5data.getNode(os.path.join('/' + GeometryName, Environment, 'Sites', Site), 'Energy')
                     while State > len(energyarray) - 1:
                         energyarray.append([0.0])
-                    energyarray[State] = Energy / Hartree_to_kcal_mol
+                    energyarray[State] = Energy * kcal_mol
                     #print 'Archived', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Energy')+'['+str(State)+']'
                     print 'Archived', energyarray, '[' + str(State) + ']'
                     if Nuke:
@@ -255,8 +303,17 @@ def LoadEmUp(path):
                         shutil.rmtree(root)
 
     #Update history of the database 
-    if h5data.isUndoEnabled() and DoCheckPoint: print 'Checkpointing database at mark', h5data.mark()
+    if h5data.isUndoEnabled() and DoCheckPoint:
+        print 'Checkpointing database at mark', h5data.mark()
     h5data.close()
 
+
+
 if __name__ == '__main__':
-    LoadEmUp('.')
+    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
+    parser.add_argument('workingdir', help = 'Working directory', nargs = '?', default = '.')
+    parser.add_argument('--nuke', action = 'store_true', default = False, help = 'Deletes files after parsing')
+    parser.add_argument('--checkpoint', action = 'store_true', default = False, help = 'Create new Pytables checkpoint in HDF5 file')
+    args = parser.parse_args()
+
+    LoadEmUp(args.workingdir, args.nuke, args.checkpoint)

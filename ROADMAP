@@ -1,6 +1,10 @@
 1. Implement pickling of Q-Chem scratch files into HDF5 database.
-   Execution flow: save orbital data in 43.0
+   Execution flow: save orbital data in 53.0
                    convert to CDFT-CI state using scf_guess read and cdftci_stop 1 or 2
                    after loading both states, save cdft-ci stat in 437.0
                    ~/share/sina/cdftci-dummytest : remember to stop after second state
                    Only then, issue a third input deck to run cdft-ci
+   Troy feels that MOM guess from gas phase will accelerate convergence of gund and excited states
+   Should precify MOM option to always reference to initial orbitals
+   gas phase orbitals should be a good initial guess!
+

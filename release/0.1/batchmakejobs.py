@@ -5,10 +5,7 @@ An experimental script
 
 Compute transition dipole moment
 
-Jiahao Chen <jiahao@mit.edu> 2011-02-18
-
-TODO use SGE interface
-TODO set up array job correctly
+.. TODO:: DEPRECATE; INTEGRATE INTO OTHER CODE
 """
 
 #Number of processors
@@ -102,9 +99,12 @@ def copywild(src, dest, overwrite=False, Verbose = True):
 def iteratejobs(corfileroot):
     'populates jobdata'
     resids = []
-    for l in open('/home/cjh/rmt/qmmm-test/trdip/mol.list'):
-        resid = int(l)
-        resids.append(resid)
+    for l in open('../mol.list'):
+        try:
+            resid = int(l)
+            resids.append(resid)
+        except ValueError:
+            continue
 
     jobdata = []
 

@@ -1,6 +1,12 @@
 #!/usr/env/bin python
 """
 Routines for parsing CHARMM and Q-Chem output files
+
+If executed as a standalone script, will run :py:func:`ParseOutput`
+on each file that is specified on the command line. (No wildcards
+supported.)
+
+.. versionadded:: 0.1
 """
 
 import numpy, sys
@@ -13,10 +19,34 @@ Please check that PYTHONPATH is set correctly.
 """)
     exit()
 
-Hartree_to_kcal_mol = 627.5095
+from Units import kcal_mol
 
 def ParseOutput(filename):
-    """Parses a CHARMM or Q-Chem output file"""
+    """
+    Parses a :term:`CHARMM` or :term:`Q-Chem` output file containing
+    :term:`QM/MM` information
+
+    :param string filename: Name of output file to parse.
+    :returns: A tuple containing:
+
+         #. (integer) Number of :term:`CHARMM` iterations, 
+         #. (list of floats) History of QM energies in kcal/mol
+            (NOTE: *not* atomic units!),
+         #. (:py:class:`numpy.ndarray`) transition dipole matrix,
+         #. (integer) Q-Chem SCF convergence threshold n in 10^-n,
+         #. (Boolean) Flag indicating unusual energy convergence,
+         #. (Boolean) Flag indicating unusual RMS gradient convergence,
+         #. (Boolean) Flag indicating if :term:`QM/MM` calculation is complete.
+
+    Heuristics for unusual behavior
+         #. Unusual energy convergence is defined as energy that is not 
+            monotonically decreasing.
+         #. Unusual RMS gradient convergence is defined as having at least
+            a spike of at least twice the height of the average of the GRMS
+            immediately before and after.
+
+    .. versionadded:: 0.1
+    """
 
     grms_history = []
     e_history = []
@@ -54,11 +84,11 @@ def ParseOutput(filename):
 
             #Parsing for Q-Chem output
             if 'Convergence criterion met' in l:
-                e = float(l.split()[1]) * Hartree_to_kcal_mol
+                e = float(l.split()[1]) / kcal_mol
                 e_history.append(e)
 
             if 'PURIFY final SCF energy' in l:
-                e = float(l.split()[-1]) * Hartree_to_kcal_mol
+                e = float(l.split()[-1]) / kcal_mol
                 e_history.append(e)
 
             if '*** MISSION COMPLETED -- STARFLEET OUT ***' in l:
@@ -76,8 +106,6 @@ def ParseOutput(filename):
                 break
 
     #Check for large fluctuations in RMS gradient
-    #The heuristic here is to detect spikes of at least twice the
-    #height of the average of the GRMS immediately before and after
     isgrmsweird = False
     for i in range(1, charmmiter - 2):
         try:

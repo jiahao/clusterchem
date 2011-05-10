@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Creates Q-Chem input scripts for computation
+"""
+:term:`Q-Chem` interface module
+Creates :term:`Q-Chem` input decks for term:`QM/MM` calculations.
+
+If run as a standalone script, will execute :py:func:`QChemInputForElectrostaticEmbedding`,
+passing command-line arguments to it.
+
+Requires the homebrew :py:mod:`QChemIO` module.
 """
 
 from copy import deepcopy
@@ -10,21 +17,29 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
     Create a Q-Chem input deck to calculate the electrostatic field at each MM atom
     due to the quantum-mechanical region.
 
-    Inputs
-    ------
-    ResID            - CHARMM ResID which defines the embedded QM region 
-    CHARMM_CARD_file - CHARMM CARD file containing molecular coordinates
-    CHARMM_RTFile    - CHARMM Residue Topology File
-    InputDeck        - Q-Chem input deck. (Optional.)
-                       If value is a string, is treated as a filename for QChemInput object.
-                       If it is a QChemInput object, then it will be modified.
-                       If not specified, a new QChemInput object will be created.
-    NewFileName      - A new filename for InputDeck. (Optional.)
+    :parameter ResID: CHARMM ResID which defines the embedded QM region 
+    :type ResID: string
 
-    Returns
-    -------
-    QChemInput       - A QChemInput object.
-                       NOTE: The file will NOT be written to disk. issue a .write() manually as necessary!               
+    :parameter CHARMM_CARD_file: Name of CHARMM CARD file containing molecular coordinates
+    :type CHARMM_CARD_file: string
+
+    :parameter CHARMM_RTFile: Name of CHARMM Residue Topology File containing force field parameters (notably, atomic charges)
+    :type CHARMM_RTFile: string
+
+    :parameter InputDeck: Q-Chem input deck. (Optional.) \
+    If value is a string, is treated as a filename for QChemInput object. \
+    If it is a QChemInput object, then it will be modified. \
+    If not specified, a new QChemInput object will be created.
+
+    :type InputDeck: string or QChemInputObject
+
+    :parameter NewFileName: A new filename for InputDeck. (Optional.)
+    :type NewFileName: string
+
+    :returns: A Q-Chem input deck that is ready to be written and executed.
+    :rtype: :py:class:`QChemInput`
+
+    NOTE: The file will NOT be written to disk. issue a .write() manually as necessary!               
     '''
     #Load fixed charge specification in RTF file
     ChargeParameter = {}
@@ -68,25 +83,26 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
 
 def QChemInputForTransitionDipole(InputDeck1, InputDeck2, NewFileName = 'tmp.in'):
     '''
-    Create a Q-Chem input deck to calculate the transition dipole moment between
+    Create a :term:`Q-Chem` input deck to calculate the transition dipole moment between
     two electronic states.
 
     This makes use of CDFT-CI's ability to calculate transition dipole moments.
 
-    Inputs
-    ------
-    InputDeck1        - Q-Chem input deck containing the first electronic state
-                       If value is a string, is treated as a filename for QChemInput object.
-                       If it is a QChemInput object, then it will be modified.
-                       If not specified, a new QChemInput object will be created.
-    InputDeck2        - Q-Chem input deck containing the second electronic state
-    NewFileName       - A new filename for the resultant QChemInput. (Optional. Default: tmp.in)
+    :param InputDeck1: :term:`Q-Chem` input deck containing the first electronic state
+                       If value is a string, is treated as a filename for the :py:class:`QChemInput` output.
+                       If it is a :py:class:`QChemInput` object, then it will be modified.
+                       If not specified, a new :py:class:`QChemInput` object will be created.
+    :type InputDeck1: string or :py:class:`QChemInput`
 
-    Returns
-    -------
-    QChemInput       - A QChemInput object.
-                       NOTE: The file will NOT be written to disk. issue a .write() manually as necessary!   
-            
+    :param InputDeck2: :term:`Q-Chem` input deck containing the second electronic state
+    :type InputDeck2: string or :py:class:`QChemInput`
+
+    :param string NewFileName: A new filename for the resultant :py:class:`QChemInput`. (Default: tmp.in)
+
+    :returns: A Q-Chem input deck that is ready to be written and executed.
+    :rtype: :py:class:`QChemInput`
+    
+    NOTE: The file will NOT be written to disk. issue a .write() manually as necessary!   
     '''
 
 

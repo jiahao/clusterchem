@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
-Hartree_to_eV = 27.2113839
-Hartree_to_kcal_mol = 627.5095
-kcal_mol_to_ev = 23.060549
+#Internal
+from Units import eV, kcal_mol
 
 EnergyFlag = '\033[1;33m!Energy\033[1;m'
 GRMSFlag = '\033[1;33m!GRMS\033[1;m'
@@ -14,7 +13,7 @@ SmallAbortFlag = '*'
 SmallRunningFlag = '.'
 NotAvailableFlag = '   N/A    '
 
-_qstat_bin = '/opt/gridengine/bin/lx24-amd64/qstat'
+_qstat_bin = 'qstat'
 
 __doc__ = """Polarizable QM/MM (QChem/CHARMM) Jobs monitor
 Jiahao Chen <jiahao@mit.edu> 2011-02-24
@@ -27,30 +26,27 @@ Key:
 """+AbortFlag  +"""\tJob aborted
 """
 
-# Here we process arguments
-
-import argparse
-
-parser = argparse.ArgumentParser(description='Monitors QChem/CHARMMM QM/MM jobs monitor')
-parser.add_argument('workingdir', help='Working directory', nargs = '?', default = '.')
-parser.add_argument('--kill', action='store_true', default = False, help='Force termination of very slowly converging jobs')
-parser.add_argument('--nuke', action='store_true', default = False, help='Automatically rename output files of aborted jobs')
-parser.add_argument('--ehist', action='store_true', default = False, help='Print convergence history of QM/MM energy')
-parser.add_argument('--summary-only', action='store_true', default = False, help='Print summary only')
-args = parser.parse_args()
 ###
 
-import fnmatch
-import glob
-import os
+import fnmatch, glob, os
 from subprocess import Popen, PIPE
 from heapq import heapify, heappop, heappush
 
 def find_files(directory, pattern):
-    """Recursively traverses directory tree IN ORDER for files matching pattern
-    Note: does NOT recurse into symbolic links.
     """
+    Iterator that recursively traverses directory tree *in order*
+    for files matching pattern
+    
+    .. NOTE:: does NOT recurse into symbolic links.
 
+    :param string directory: Name of directory to traverse
+    :param string pattern: File pattern to match
+
+    :returns: Iterator
+    :rtype: tuple(current_directory, filename)
+
+    .. versionadded:: 0.1
+    """
 
     stack = [directory] #A priority queue
     while stack:
@@ -67,7 +63,18 @@ def find_files(directory, pattern):
 
 
 def ParseOutStatus(filename):
-    'Checks status of QM/MM job based on output file'
+    """
+    Checks status of QM/MM job based on output file
+
+    :param string filename:
+        :term:`CHARMM` or :term:`Q-Chem` output file to monitor
+
+    :returns: the same data as :py:func:`ParseOutput`.
+
+    .. TODO:: There is some overlap with :py:func:`ParseOutput`; consolidate.
+
+    .. versionadded:: 0.1
+    """
 
     grms_history = []
     e_history = []
@@ -105,11 +112,11 @@ def ParseOutStatus(filename):
 
             #Parsing for Q-Chem output
             if 'Convergence criterion met' in l:
-                e = float(l.split()[1]) * Hartree_to_kcal_mol
+                e = float(l.split()[1]) / kcal_mol
                 e_history.append(e)
 
             if 'PURIFY final SCF energy' in l:
-                e = float(l.split()[-1]) * Hartree_to_kcal_mol
+                e = float(l.split()[-1]) / kcal_mol
                 e_history.append(e)
 
             if '*** MISSION COMPLETED -- STARFLEET OUT ***' in l:
@@ -170,6 +177,13 @@ def ParseOutStatus(filename):
 
 
 class SGEJobData:
+    """
+    Class container for SGE jobs.
+
+    .. TODO:: use SGE interface
+
+    .. versionadded:: 0.1
+    """
     def __init__(self, job_number = None, qstat = _qstat_bin):
         if job_number == None:
             self.job_number = None
@@ -182,11 +196,12 @@ class SGEJobData:
 
 
     def CallQstatJ(self):
-        """Populates data from SGE using qstat -j
+        """
+        Populates data from SGE using qstat -j
 
-        Note. This will NOT work as expected for scheduling info and parallel environment
-              but I don't expect to use these data, so I don't care.
-
+        .. NOTE:: This will NOT work as expected for scheduling info
+                  and parallel environment but I don't expect to use
+                  these data, so I don't care.
         """
 
         P = Popen([self.qstatbin, '-j', str(self.job_number)], stdout = PIPE)
@@ -207,19 +222,23 @@ class SGEJobData:
 
 
     def CallQstat(self):
-        """Populates data from SGE using qstat
+        """
+        Populates data from SGE using qstat
 
         Not all data reported by qstat can be obtained from qstat -j
 
-        Note. If instantiating many SGEJobData, it is preferable to poll qstat directly.
-        and use ParseQstatLine(). See SGEGetRunningList()
+        .. NOTE:: If instantiating many SGEJobData, it is preferable to
+                  poll qstat directly. and use ParseQstatLine().
+                  See SGEGetRunningList()
+
         """
         P = Popen(self.qstatbin, stdout = PIPE)
         for l in P.stdout:
             self.ParseQstatLine(l)
 
     def ParseQstatLine(self, l):
-        """Populates data from SGE using a line from qstat
+        """
+        Populates data from SGE using a line from qstat
 
         Not all data reported by qstat can be obtained from qstat -j
         """
@@ -242,7 +261,13 @@ class SGEJobData:
 
 
 def SGEGetRunningList(qstat = _qstat_bin):
-    """Returns a list of running jobs from SGE using qstat"""
+    """
+    Returns a list of running jobs from SGE using qstat
+
+    .. TODO:: DEPRECATE
+
+    .. versionadded:: 0.1
+    """
 
     P = Popen(qstat, stdout = PIPE)
     jobs = []
@@ -261,6 +286,13 @@ def SGEGetRunningList(qstat = _qstat_bin):
 
 
 def main(path = '.', extension = '.out'):
+    """
+    main
+
+    .. TODO:: DOCUMENT
+
+    .. versionadded:: 0.1
+    """
     jobs = SGEGetRunningList()
 
     Aborted = []
@@ -382,7 +414,7 @@ def main(path = '.', extension = '.out'):
         print jobroot, 
         try: 
             print 'non-pol:',
-            print ' %.3f eV' % ((jobdata['dscf-nonpol'][0] - jobdata['gs-nonpol'][0])/kcal_mol_to_ev),
+            print ' %.3f eV' % ((jobdata['dscf-nonpol'][0] - jobdata['gs-nonpol'][0])*kcal_mol/eV),
             if jobdata['gs-nonpol'][2] or jobdata['dscf-nonpol'][2]: print SmallAbortFlag,
             elif jobdata['gs-nonpol'][1] or jobdata['dscf-nonpol'][1]: print SmallRunningFlag,
             else: print ' ',
@@ -390,7 +422,7 @@ def main(path = '.', extension = '.out'):
             print NotAvailableFlag,
         try: 
             print 'pol:',
-            print '%.3f eV' % ((jobdata['dscf'][0] - jobdata['gs'][0])/kcal_mol_to_ev),
+            print '%.3f eV' % ((jobdata['dscf'][0] - jobdata['gs'][0])*kcal_mol/eV),
             if jobdata['gs'][2] or jobdata['dscf'][2]: print SmallAbortFlag,
             elif jobdata['gs'][1] or jobdata['dscf'][1]: print SmallRunningFlag,
             else: print ' ',
@@ -398,7 +430,20 @@ def main(path = '.', extension = '.out'):
             print NotAvailableFlag,
         print#if numthings % 3 == 0: print
 
+
+
 if __name__ == '__main__':
+    # Process arguments
+
+    import argparse
+    parser = argparse.ArgumentParser(description='Monitors QChem/CHARMM QM/MM jobs monitor')
+    parser.add_argument('workingdir', help='Working directory', nargs = '?', default = '.')
+    parser.add_argument('--kill', action='store_true', default = False, help='Force termination of very slowly converging jobs')
+    parser.add_argument('--nuke', action='store_true', default = False, help='Automatically rename output files of aborted jobs')
+    parser.add_argument('--ehist', action='store_true', default = False, help='Print convergence history of QM/MM energy')
+    parser.add_argument('--summary-only', action='store_true', default = False, help='Print summary only')
+    args = parser.parse_args()
+
     if not args.summary_only: print __doc__
     print 'Running in directory',args.workingdir
     main(args.workingdir)
