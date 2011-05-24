@@ -60,7 +60,7 @@ OtherInputs is an optional input that is additional command line input.
 
 
 
-def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm', Overwrite = True, PollInt = 60):
+def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm', Overwrite = True):
 
 
     if not Overwrite and os.path.exists(OutputFile):
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     os.environ['QMMMPOL_OWD'] = WorkingDir
 
 
-    OtherInputs = ' '.join(sys.argv[2:])
+    OtherInput = ' '.join(sys.argv[2:])
 
     #Run CHARMM
-    RunCHARMM(CHARMMInput, os.path.join(WorkingDir, CHARMMOutput), OtherInputs)
+    RunCHARMM(CHARMMInput, os.path.join(WorkingDir, CHARMMOutput), OtherInput)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 #Internal
+from OSUtils import find_files
 from Units import eV, kcal_mol
 
 EnergyFlag = '\033[1;33m!Energy\033[1;m'
@@ -28,37 +29,7 @@ Key:
 
 ###
 
-import fnmatch, glob, os
-from subprocess import Popen, PIPE
-from heapq import heapify, heappop, heappush
-
-def find_files(directory, pattern):
-    """
-    Iterator that recursively traverses directory tree *in order*
-    for files matching pattern
-    
-    .. NOTE:: does NOT recurse into symbolic links.
-
-    :param string directory: Name of directory to traverse
-    :param string pattern: File pattern to match
-
-    :returns: Iterator
-    :rtype: tuple(current_directory, filename)
-
-    .. versionadded:: 0.1
-    """
-
-    stack = [directory] #A priority queue
-    while stack:
-        nowdir = heappop(stack)
-        for base in os.listdir(nowdir):
-            name = os.path.normpath(os.path.join(nowdir, base))
-            if os.path.isdir(name):
-                if not os.path.islink(name): #Avoid infinite loop with symlinks
-                    heappush(stack, name)
-                    #Use default lexicographical order for priority (sort)
-            elif fnmatch.fnmatch(name, pattern):
-                yield nowdir, name
+import glob, os
 
 
 
@@ -158,11 +129,11 @@ def ParseOutStatus(filename):
     isgrmsweird = False
     for i in range(1,charmmiter-2):
         try:
-          if  grms_history[i] > grms_history[i+1] + grms_history[i-1]:
-            isgrmsweird = True
-            break
+            if grms_history[i] > grms_history[i+1] + grms_history[i-1]:
+                isgrmsweird = True
+                break
         except IndexError:
-          pass
+            pass
 
     #Check for nonmonotonic convergence in energy
     isenergyweird = False
@@ -176,115 +147,6 @@ def ParseOutStatus(filename):
 
 
 
-class SGEJobData:
-    """
-    Class container for SGE jobs.
-
-    .. TODO:: use SGE interface
-
-    .. versionadded:: 0.1
-    """
-    def __init__(self, job_number = None, qstat = _qstat_bin):
-        if job_number == None:
-            self.job_number = None
-        else:
-            self.job_number = int(job_number)
-        self.qstatbin = qstat
-        #if job_number != None:
-        #    self.CallQstatJ()
-
-
-
-    def CallQstatJ(self):
-        """
-        Populates data from SGE using qstat -j
-
-        .. NOTE:: This will NOT work as expected for scheduling info
-                  and parallel environment but I don't expect to use
-                  these data, so I don't care.
-        """
-
-        P = Popen([self.qstatbin, '-j', str(self.job_number)], stdout = PIPE)
-        for l in P.stdout:
-            t = l.split()
-            if t[0][-1] == ':':
-                attributename = t[0][:-1]
-                attributevalue = t[1]
-
-                #Convert data type
-                if attributename in ['job_number']:
-                    attributevalue = int(attributevalue)
-             
-                if attributename == 'job_number' and self.job_number != None:
-                    assert attributevalue == self.job_number
-                setattr(self, attributename, attributevalue)
-
-
-
-    def CallQstat(self):
-        """
-        Populates data from SGE using qstat
-
-        Not all data reported by qstat can be obtained from qstat -j
-
-        .. NOTE:: If instantiating many SGEJobData, it is preferable to
-                  poll qstat directly. and use ParseQstatLine().
-                  See SGEGetRunningList()
-
-        """
-        P = Popen(self.qstatbin, stdout = PIPE)
-        for l in P.stdout:
-            self.ParseQstatLine(l)
-
-    def ParseQstatLine(self, l):
-        """
-        Populates data from SGE using a line from qstat
-
-        Not all data reported by qstat can be obtained from qstat -j
-        """
-        t = l.split()
-        jobid = int(t[0])
-        if self.job_number == None:
-            self.job_number = jobid
-        else:
-            assert jobid == self.job_number
-        self.prior = t[1]
-        self.name = t[2]
-        self.user = t[3]
-        self.state = t[4]
-        self.submit = t[5] + ' ' + t[6]
-        if 'r' in self.state:
-            self.queue, self.host = t[7].split('@')
-
-        self.slots = t[-1]
-
-
-
-def SGEGetRunningList(qstat = _qstat_bin):
-    """
-    Returns a list of running jobs from SGE using qstat
-
-    .. TODO:: DEPRECATE
-
-    .. versionadded:: 0.1
-    """
-
-    P = Popen(qstat, stdout = PIPE)
-    jobs = []
-    for l in P.stdout:
-        try:
-            job_number = int(l.split()[0])
-            thisjob = SGEJobData(job_number, qstat)
-            thisjob.ParseQstatLine(l)
-            if 'r' in thisjob.state: thisjob.CallQstatJ()
-            jobs.append(thisjob)
-        except (ValueError, IndexError):
-            pass
-
-    return jobs
-
-
-
 def main(path = '.', extension = '.out'):
     """
     main
@@ -293,10 +155,13 @@ def main(path = '.', extension = '.out'):
 
     .. versionadded:: 0.1
     """
-    jobs = SGEGetRunningList()
+    from SGE import SGE
+    sge_jobs = SGE()
+    jobs = sge_jobs.getuserjobs()
 
     Aborted = []
     Data = {}
+    tdip = None
     for root, filename in find_files(path, '*'+extension):
         jobname = filename#[:-len(extension)]
         charmmiter, e_history, tdip, qm_iterthresh, isenergyweird, isgrmsweird, isdone \
@@ -331,22 +196,22 @@ def main(path = '.', extension = '.out'):
             energy = 0.
 
         if not args.summary_only and not isdone:
-                if charmmiter > 1:
-                    print '(%+.4f) at iteration %d, SCF threshold = 1e-%d' % \
-                   (e_history[-1]-e_history[-2], charmmiter, qm_iterthresh),
-                else:
-                    print 'iteration = %d' % charmmiter,
+            if charmmiter > 1:
+                print '(%+.4f) at iteration %d, SCF threshold = 1e-%d' % \
+                (e_history[-1]-e_history[-2], charmmiter, qm_iterthresh),
+            else:
+                print 'iteration = %d' % charmmiter,
  
         if args.kill and thisjob != None and qm_iterthresh == 8 and abs(e_history[-1]-e_history[-2]) < 5e-2:
-                #Heuristic for being done - energy converged to 0.05 kcal/mol
-                #ssh $hostname 'echo 1 > /scratch/cjh/$jobid.qmmmpol/killswitch'
-                os.system("ssh %s \'echo 1 > /scratch/$USER/%d.qmmmpol/killswitch\'" % (thisjob.host, thisjob.job_number))
-                print '\n"Dr. Strangelove, the kill switch has been deployed."'
+            #Heuristic for being done - energy converged to 0.05 kcal/mol
+            #ssh $hostname 'echo 1 > /scratch/cjh/$jobid.qmmmpol/killswitch'
+            os.system("ssh %s \'echo 1 > /scratch/$USER/%d.qmmmpol/killswitch\'" % (thisjob.host, thisjob.job_number))
+            print '\n"Dr. Strangelove, the kill switch has been deployed."'
 
         if args.ehist and len(e_history):
-             print '\nEnergy history'
-             for n, e in enumerate(e_history):
-                 print 'Iteration = %4d Energy = %.4f kcal/mol' % (n,e)
+            print '\nEnergy history'
+            for n, e in enumerate(e_history):
+                print 'Iteration = %4d Energy = %.4f kcal/mol' % (n,e)
 
         if not args.summary_only: print
 
@@ -402,13 +267,14 @@ def main(path = '.', extension = '.out'):
 
     #Calculate random stuff
     pq = Data.items()
+    from heapq import heapify, heappop
+
     heapify(pq)
     print '\n\nSummary of excitation energies computed:'
-    numthings = 0
+    
     while True:
         try:
             jobroot, jobdata = heappop(pq)
-            numthings += 1
         except IndexError:
             break
         print jobroot, 
@@ -428,7 +294,7 @@ def main(path = '.', extension = '.out'):
             else: print ' ',
         except KeyError:
             print NotAvailableFlag,
-        print#if numthings % 3 == 0: print
+        print
 
 
 

@@ -3,7 +3,7 @@
 Routines for parsing CHARMM and Q-Chem output files
 
 If executed as a standalone script, will run :py:func:`ParseOutput`
-on each file that is specified on the command line. (No wildcards
+on each file that is specified on the command line. (Wildcards
 supported.)
 
 .. versionadded:: 0.1
@@ -93,17 +93,27 @@ def ParseOutput(filename):
 
             if '*** MISSION COMPLETED -- STARFLEET OUT ***' in l:
                 isdone = True
-                break
+
+            #For batch inputs, lines of the form 'Job m of n' will be emitted
+            if 'Job' in l and 'of' in l:
+                isdone = False
 
             #Read transition dipole moment
             if 'dipole x component in diabatic basis' in l:
                 tdip = None
                 q = QChemIO.QChemOutput(filename)
-                x = q.ReadMatrix('dipole x component in diabatic basis')[0]
-                y = q.ReadMatrix('dipole y component in diabatic basis')[0]
-                z = q.ReadMatrix('dipole z component in diabatic basis')[0]
-                tdip = numpy.asarray([x, y, z])
-                break
+                try:
+                    x = q.ReadMatrix('dipole x component in diabatic basis')[0]
+                    y = q.ReadMatrix('dipole y component in diabatic basis')[0]
+                    z = q.ReadMatrix('dipole z component in diabatic basis')[0]
+                    tdip = numpy.asarray([x, y, z])
+                except (ValueError, TypeError):
+                    #For some reason, failed to parse
+                    print 'Could not parse transition dipole in', filename
+                    tdip = None
+                #break
+
+
 
     #Check for large fluctuations in RMS gradient
     isgrmsweird = False
@@ -115,6 +125,8 @@ def ParseOutput(filename):
         except IndexError:
             pass
 
+
+
     #Check for non-monotonic convergence in energy
     isenergyweird = False
     tol = 1e-2
@@ -123,9 +135,12 @@ def ParseOutput(filename):
             isenergyweird = True
             break
 
+
     return charmmiter, e_history, tdip, qm_iterthresh, isenergyweird, isgrmsweird, isdone
 
 
 if __name__ == '__main__':
-    for fname in sys.argv[1:]:
-        print ParseOutput(fname)
+    from glob import glob
+    for blob in glob(sys.argv[1:]):
+        for fname in blob:
+            print ParseOutput(fname)

@@ -65,7 +65,7 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
                 MMbuf.append(('%15.8f\t'*4) % (x, y, z, charge)) 
 
     #Make Q-Chem input deck
-    if InputDeck == None: 
+    if InputDeck == None:
         InputDeck = QChemIO.QChemInput(QChemInputFileName)
     elif type(InputDeck) == type('1'): #A string, treat as filename
         InputDeck = QChemIO.QChemInput(InputDeck)
@@ -107,6 +107,7 @@ def QChemInputForTransitionDipole(InputDeck1, InputDeck2, NewFileName = 'tmp.in'
 
 
     Q = QChemIO.QChemInput(NewFileName)
+    del Q.jobs[0] #Delete empty job that is initialized
 
     if type(InputDeck1) == type('1'): #A string, treat as filename
         Q.ImportQChemOutput(InputDeck1)
@@ -171,6 +172,8 @@ skip_charge_self_interact true
 0.
 1. 0 0 s
 """)
+
+
     return Q
 
 

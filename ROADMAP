@@ -1,3 +1,7 @@
+1. Implement rotation of orbital guesses.
+
+1. Make td-nonpol, td regenerate qchem.working.in if not found.
+
 1. Implement pickling of Q-Chem scratch files into HDF5 database.
    Execution flow: save orbital data in 53.0
                    convert to CDFT-CI state using scf_guess read and cdftci_stop 1 or 2

@@ -5,8 +5,8 @@ Generates QM/MM electronic structure jobs and submits them to a Sun Grid Engine 
 
 .. versionadded:: 0.1
 """
-
-from RMT import *
+import os, sys
+from glob import glob
 
 def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist.txt', 
     sge_jobname = 'h2pc-qmmm-rmt'):
@@ -40,18 +40,23 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
     """
 
     from CHARMMUtil import dedrude
+    from OSUtils import chdirn
+
     if os.path.exists(joblist):
         print 'Skipping population of', joblist
 
         #count numjobs
         numjobs = 0
-        for l in open(joblist):
+        for _ in open(joblist):
             numjobs += 1
     else:
         alljobs = []
 
-        for coordfile in glob('*.d.cor'):
-            coordfileroot = coordfile[:-6]
+        #for coordfile in glob('*.d.cor'):
+        #    coordfileroot = coordfile[:-6]
+
+        for coordfile in glob('*.cor'):
+            coordfileroot = coordfile[:-4]
 
             #Generates coordinate file without Drude particles
             nonpolcoordfile = coordfileroot +'.cor'
@@ -98,7 +103,8 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
     x.args.N = sge_jobname
     x.args.t = '1-'+str(numjobs)
     x.args.o = '$JOB_NAME.$JOB_ID.$TASK_ID.stdout.log'.replace('$', '\$')
-    x.args.command = sys.argv[0]
+    x.args.command = 'python '+sys.argv[0]
+    x.args.b = 'y'
     #x.args.v = 'PYTHONPATH=$PYTHONPATH:'+os.path.dirname(sys.argv[0])
     print '#To submit the array job, run this command:'
     x.execute(mode = 'echo')
@@ -133,9 +139,11 @@ def copywild(src, dest, overwrite=False, Verbose = True):
         if (os.path.isfile(fname) or os.path.islink(fname)) and doit:
             #if not os.path.exists(destfname) or (overwrite and os.path.exists(destfname)):
             if overwrite and os.path.exists(destfname): os.unlink(destfname)
-            if not os.path.exists(destfname): os.symlink(fname, destfname)
-            if Verbose: print os.path.abspath(fname), '-->', os.path.abspath(destfname)
-
+            try:
+                os.symlink(fname, destfname)
+                if Verbose: print os.path.abspath(fname), '-->', os.path.abspath(destfname)
+            except OSError:
+                print 'Warning: could not make symlink. ', os.path.abspath(fname), '-X->', os.path.abspath(destfname)
 
 
 def iteratejobs(corfileroot, mollist = '../mol.list'):
@@ -164,10 +172,10 @@ def iteratejobs(corfileroot, mollist = '../mol.list'):
     jobdata = []
 
     #Initialize calculations
-    for resid in resids:
-        #for job in ['gs-nonpol', 'dscf-nonpol', 'gs', 'dscf']:
-        #for job in ['td', 'td-nonpol']:
-        for job in ['dscf-nonpol']:
+    #for job in ['gs-nonpol', 'dscf-nonpol', 'gs', 'dscf']:
+    #for job in ['td', 'td-nonpol']:
+    for job in ['tddft-nonpol']:
+        for resid in resids:
             #If no output files exist
             if len(glob(os.path.join(corfileroot, str(resid), job, '*.out'))) == 0:
                 #copywild(os.path.join(corfileroot,'*'), os.path.join(corfileroot, str(resid), job))
@@ -199,6 +207,9 @@ def RunQMMM(infile, corfile, qchemcnt, res1, np = 1):
     """
     from subprocess import Popen, PIPE
     outfile = infile[:-2]+'out'
+    corfile = corfile.upper()
+    qchemcnt = qchemcnt.upper()
+    
     if not os.path.exists(outfile):
         os.environ['NP'] = str(np)
         p = Popen('charmmpol '+infile+' CORFILE='+ corfile +' QCHEMCNT='+qchemcnt+' np='+str(np)+ ' res1='+str(res1), stdout=PIPE, shell=True)
@@ -209,20 +220,7 @@ def RunQMMM(infile, corfile, qchemcnt, res1, np = 1):
 
 
 
-def chdirn(thedir):
-    """
-    Changes into a directory. If directory does not exist, make it.
-
-    :param string thedir: The name of the directory to go to.
-    :returns: None 
-    """
-    if not os.path.exists(thedir):
-        os.mkdir(thedir)
-    os.chdir(thedir)
-
-
-
-def domyjob(corfileroot, resid, jobtype, qchem = 'qchem40.beta'):
+def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
     """
     .. TODO:: DOCUMENT
 
@@ -234,9 +232,12 @@ def domyjob(corfileroot, resid, jobtype, qchem = 'qchem40.beta'):
 
     #Historical note: prior to the installation of qchem40.beta, the executable used was
     #qchem= '/home/tkowalcz/qchem/qchem-2ecoupling/linux64/exe/qcprog.exe'
+    from OSUtils import chdirn
     try:
-        from QChemInterface import QChemInputForTransitionDipole
+        from QChemInterface import QChemInputForElectrostaticEmbedding, QChemInputForTransitionDipole
     except ImportError:pass
+
+    from QChemIO import QChemInput
 
     olddir = os.getcwd()
 
@@ -248,44 +249,85 @@ def domyjob(corfileroot, resid, jobtype, qchem = 'qchem40.beta'):
     chdirn(jobtype)
 
     #Initialize
-    print os.getcwd()
     copywild(os.path.join('..','..','*'), '.')
 
+    if '-nonpol' in jobtype:
+        charmmcardfile = corfileroot+'.COR'
+    else:
+        charmmcardfile = corfileroot+'.D.COR'
+    charmmcardfile = charmmcardfile.upper()
+
+    outfiles = glob('*.out')
+    if overwrite:
+        for filename in outfiles:
+            os.unlink(filename)
+            print 'Deleted existing output file', filename
+
     if jobtype == 'gs-nonpol':
-        RunQMMM('h2pc.in', corfileroot+'.cor', 'QCHEM-GROUND.IN', resid)
+        RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-GROUND.IN', resid)
     elif jobtype == 'dscf-nonpol':
-        RunQMMM('h2pc.in', corfileroot+'.cor', 'QCHEM-DSCF.IN', resid)
+        RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-DSCF.IN', resid)
+    elif jobtype == 'tddft-nonpol':
+        #Do not use CHARMM interface
+        #TODO Replace all nonpol calculations!!
+        Q = QChemInput('QCHEM-TDDFT.IN')
+        Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, 'h2pc.rtf', Q)
+        Q.write('qchem.working.in')
+        Q.execute('qchem.out', qchemcmd = qchemcmd, parse = False)
+
+
     elif jobtype == 'gs':
-        RunQMMM('h2pc-pol.in', corfileroot+'.d.cor', 'QCHEM-GROUND.IN', resid)
+        RunQMMM('h2pc-pol.in', charmmcardfile, 'QCHEM-GROUND.IN', resid)
     elif jobtype == 'dscf':
-        RunQMMM('h2pc-pol.in', corfileroot+'.d.cor', 'QCHEM-DSCF.IN', resid)
+        RunQMMM('h2pc-pol.in', charmmcardfile, 'QCHEM-DSCF.IN', resid)
     elif jobtype == 'td':
-        os.environ['QCPROG'] = _qchem_td_qcprog
+        try:
+            os.environ['QCPROG'] = _qchem_td_qcprog
+        except NameError: #_qchem_td_qcprog not defined
+            pass
 
         filenames = glob('../gs/*/qchem*working.in')\
                   + glob('../dscf/*/qchem*working.in')
         if len(filenames) == 2:
             print 'Running polarizable QM/MM transition dipole moment for resid =', resid
         Q = QChemInputForTransitionDipole(filenames[0], filenames[1])
+
         Q.filename = 'td.in'
         Q.jobs[1].rem_delete('purify')
-        Q.execute(parse = False)
+        Q.execute(qchemcmd = qchemcmd, parse = False)
         if len(filenames) > 2:
             print 'Too many possible inputs:', ' '.join(filenames)
 
     elif jobtype == 'td-nonpol':
-        os.environ['QCPROG'] = _qchem_td_qcprog
+        try:
+            os.environ['QCPROG'] = _qchem_td_qcprog
+        except NameError:
+            pass
+
+        print 'Running nonpolarizable QM/MM transition dipole moment for resid =', resid
 
         filenames = glob('../gs-nonpol/*/qchem*working.in') \
                   + glob('../dscf-nonpol/*/qchem*working.in')
         if len(filenames) == 2:
-            print 'Running nonpolarizable QM/MM transition dipole moment for resid =', resid
+            print 'Reusing input from', ', '.join([os.path.abspath(f) for f in filenames])
             Q = QChemInputForTransitionDipole(filenames[0], filenames[1])
-            Q.filename = 'td.in'
-            Q.jobs[1].rem_delete('purify')
-            Q.execute(parse = False)
-            if len(filenames) > 2:
-                print 'Too many possible inputs:', ' '.join(filenames)
+        else:
+            print 'Too few or too many files found:', ', '.join([os.path.abspath(f) for f in filenames])
+            print 'Regenerating state descriptions using default rem blocks'
+
+            Q1 = QChemInput('QCHEM-GROUND.IN')
+            Q1 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, 'h2pc.rtf', Q1)
+
+            Q2 = QChemInput('QCHEM-DSCF.IN')
+            Q2 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, 'h2pc.rtf', Q2)
+
+            Q = QChemInputForTransitionDipole(Q1, Q2)
+
+        Q.filename = 'td.in'
+        Q.jobs[1].rem_delete('purify')
+            
+        Q.execute(qchemcmd = qchemcmd, parse = False)
+
 
     else:
         assert False, 'Unknown jobtype '+str(jobtype)
@@ -295,7 +337,7 @@ def domyjob(corfileroot, resid, jobtype, qchem = 'qchem40.beta'):
 
 
 
-def SGEArrayTaskHandler(ge_task_id, taskinfofile = 'sgearraytasklist.txt'):
+def SGEArrayTaskHandler(ge_task_id, taskinfofile = 'sgearraytasklist.txt', overwrite = False, qchemcmd = 'qchem'):
     """
     This gets called if the main program is run in a Sun Grid Engine array job environment.
 
@@ -322,12 +364,29 @@ def SGEArrayTaskHandler(ge_task_id, taskinfofile = 'sgearraytasklist.txt'):
         if len(t) >= 4 and t[0] == ge_task_id:
             thiscorfileroot, thisresid, thisjobtype = t[1], t[2], t[3]
             break
-    domyjob(thiscorfileroot, thisresid, thisjobtype)
+    domyjob(thiscorfileroot, thisresid, thisjobtype, overwrite, qchemcmd)
 
 
             
 if __name__ == '__main__':
+
+    import argparse
+    parser = argparse.ArgumentParser(description = 'SGE Array Job generator and handler')
+    parser.add_argument('--taskfile', action = 'store', default = \
+        'sgearraytasklist.txt', help = 'Name of SGE array task information file')
+    parser.add_argument('--overwrite', action = 'store_true', default = \
+        False, help = 'Continue calculation even output file exists')
+
+    parser.add_argument('--qcprog', action = 'store', default = \
+        'qchem40.beta', help = 'Name of Q-Chem binary to execute')
+    
+    args = parser.parse_args()
+
+
     if 'SGE_TASK_ID' not in os.environ:
         PrepareJobs()
     else: #In SGE array task
-        SGEArrayTaskHandler(ge_task_id = os.environ['SGE_TASK_ID'])
+        SGEArrayTaskHandler(ge_task_id = os.environ['SGE_TASK_ID'], \
+            taskinfofile = args.taskfile, overwrite = args.overwrite, qchemcmd = args.qcprog)
+
+

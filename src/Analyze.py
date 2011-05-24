@@ -106,7 +106,7 @@ def histogram_energies(h5filename = 'h2pc-data.h5'):
     excitation_energies = []
     dump = []
     for node in h5data.walkNodes():
-        if node._v_name == 'Energy':
+        if node._v_name == 'Energy' and 'Fixed' in node._v_pathname:
             if len(node) >= 2:
                 energy = (node[1] - node[0]) / eV
                 if 0 < energy < 10:
@@ -124,5 +124,151 @@ def histogram_energies(h5filename = 'h2pc-data.h5'):
 
 
 
+def analyze_h2pc_tdip(h5filename = 'h2pc-data.h5'):
+    """Calculate the dot product of the transition dipole
+    with the H-H cordinate vector"""
+
+    from numpy import dot, arccos, pi
+    from numpy.linalg import norm
+
+
+    h5data = tables.openFile(h5filename, mode = 'r')
+    for node in h5data.walkNodes():
+        if node._v_name == 'Dipole':
+            #Extract transition dipole from matrix
+            dipole = node[:,0,1]
+            
+            #Look up geometry
+            path = node._v_pathname.split('/')
+            resid  = path[-2]
+            snapshot = path[1]
+
+            try:
+                geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
+            except tables.exceptions.NoSuchNodeError: continue
+
+            #Extract basic hydrogens
+            atoms = [ x['Coord'] for x in geometry.iterrows() \
+                      if x['ResID'] == resid and 'NQ' in x['Type'] ]
+
+            if len(atoms) != 2: continue #silently fail
+            assert len(atoms) == 2, """\
+Wrong number of free base nitrogens in %r:%r
+Expected 2 but found %d
+Coordinates:
+""" % (snapshot, resid, len(atoms)) + '\n'.join([str(x) for x in atoms])
+            
+            atomvec = atoms[1] - atoms[0]
+
+            #Extract energies
+            try:
+                energies = h5data.getNode('/'.join(path[:-1]+['Energy']))
+                excite = (energies[1] - energies[0]) /eV
+            except (IndexError, tables.exceptions.NoSuchNodeError):
+                excite = 0.0
+
+            if norm(dipole) != 0.0:
+                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*norm(dipole)))
+                angle = min(angle, pi - angle)
+                print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
+
+    h5data.close()
+
+
+def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc-data/sub-0/1/mol.list'):
+    """
+    Scans the HDF5 file for missing data.
+
+    :param string h5filename: Name of HDF5 file
+    :param string mollist: Name of file containing a list of active resids
+
+    This scans the HDF5 file for missing or invalid energies and dipoles.
+
+    Things that could go wrong:
+    - The ground state energy is zero.
+    - The excited state energy is zero or missing.
+    - The transition dipole moment is zero.
+
+    Outputs to console a list of serialized job information suitable for
+    running with :py:mod:`SGEInterface`.
+    """
+
+    from numpy import zeros
+
+    resids = []
+    for l in open(mollist):
+        try:
+            resids.append(str(int(l)))
+        except ValueError: pass
+
+    #Names of data nodes and expected dimensions
+    data = [('Energy', 2), ('Dipole', (3, 2, 2))]
+
+    #Types of calculations
+    calctypes = ['gs', 'dscf', 'td', 'gs-nonpol', 'dscf-nonpol', 'td-nonpol']
+
+    #Enumerate coordinates
+    
+    h5data = tables.openFile(h5filename, mode = 'r')
+
+    coords = []
+    for node in h5data:
+        if node._v_name == 'CHARMM_CARD':
+            parentname = node._v_parent._v_name
+            if '_' not in parentname:
+                coords.append(parentname)
+
+    isok = {}
+    for coord in coords:
+        for resid in resids:
+            for calctype in calctypes:
+                isok[(coord, resid, calctype)] = False
+
+    for node in h5data:
+        path = node._v_pathname.split('/')
+        try:
+            coord = path[1]
+            env   = path[2] #Fixed or WithDrude
+            resid = path[-2]
+        except IndexError: continue
+        
+        for name, dim in data:
+            if node._v_name == name:                
+                if name == 'Energy':
+                    okenergy1 = (node[0] != 0.0)
+                    if env == 'Fixed': calctype = 'gs-nonpol'
+                    else: calctype = 'gs'
+                    isok[(coord, resid, calctype)] = okenergy1
+                    if len(node) >= 2:
+                        okenergy2 = (node[1] != 0.0) 
+                        if env == 'Fixed': calctype = 'dscf-nonpol'
+                        else: calctype = 'dscf'
+                        isok[(coord, resid, calctype)] = okenergy2
+
+                elif name == 'Dipole':                    
+                    okdipole = (node.shape == dim) and not (node[:,:,:] == zeros(dim)).all()
+                    if env == 'Fixed': calctype = 'td-nonpol'
+                    else: calctype = 'td'
+                    isok[(coord, resid, calctype)] = okdipole
+
+    h5data.close()
+
+
+    #Collates job data
+    n = 1
+    buf = []
+    for coord in coords:
+        for resid in resids:  
+            #for calctype in [x for x in calctypes if 'nonpol' in x]:
+            for calctype in ['gs-nonpol', 'dscf-nonpol', 'td-nonpol']:
+                if not isok[(coord, resid, calctype)]:
+                    buf.append('\t'.join((str(n), coord, resid, calctype)))
+                    n += 1
+
+    print '\n'.join(buf)
+    
+
 if __name__ == '__main__':
-    histogram_energies()
+    #histogram_energies()
+    analyze_h2pc_tdip()
+    #LocateMissingData()
