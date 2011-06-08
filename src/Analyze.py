@@ -132,6 +132,7 @@ def analyze_h2pc_tdip(h5filename = 'h2pc-data.h5'):
     from numpy.linalg import norm
 
 
+    buf = []
     h5data = tables.openFile(h5filename, mode = 'r')
     for node in h5data.walkNodes():
         if node._v_name == 'Dipole':
@@ -170,7 +171,31 @@ Coordinates:
             if norm(dipole) != 0.0:
                 angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*norm(dipole)))
                 angle = min(angle, pi - angle)
-                print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
+
+                if len(energies) > 2: #Try next higher state
+                    newexcite = (energies[2] - energies[0]) /eV
+                    newdipole = node[:,0,2]
+                    newangle = arccos(dot(atomvec, newdipole)/(norm(atomvec)*norm(newdipole)))
+                    newangle = min(newangle, pi - newangle)
+                    if newangle < angle:
+                        #print 'Root flip at', snapshot, resid
+                        angle = newangle
+                        excite = newexcite
+
+                if len(energies) > 2:
+                    assert min(energies[2:]) > energies[1]
+
+                #buf.append((snapshot, resid, excite, angle))
+                if True or angle > 0.9 or excite > 2.1:
+                    buf.append((snapshot, resid, excite, angle))
+                    idx = len(buf)
+                    #print idx, snapshot, resid, 'tddft-nonpol'
+                    print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
+
+    #for idx, (snapshot, resid, excite, angle) in enumerate(buf):
+    #    print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
+        #if angle < 0.9 or excite > 2.1:
+        #    print idx+1, snapshot, resid, 'tddft-nonpol'
 
     h5data.close()
 
@@ -269,6 +294,14 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc
     
 
 if __name__ == '__main__':
-    #histogram_energies()
-    analyze_h2pc_tdip()
-    #LocateMissingData()
+    import argparse
+    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
+    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
+    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
+    args = parser.parse_args()
+
+    logging.basicConfig(level = args.loglevel)
+
+    #histogram_energies(args.h5file)
+    analyze_h2pc_tdip(args.h5file)
+    #LocateMissingData(args.h5file)

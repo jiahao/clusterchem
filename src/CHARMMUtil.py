@@ -9,6 +9,8 @@ command-line arguments to it.
 .. versionadded:: 0.1
 """
 
+import logging
+
 def dedrude(infilename, outfilename):
     """
     Strips Drude particles from :term:`CHARMM card file`
@@ -28,6 +30,10 @@ def dedrude(infilename, outfilename):
     """
     buf = []    
     state = 'header'
+
+    log = logging.getLogger()
+    log.info('Stripping Drude particles from CHARMM CARD '+infilename)
+
     for l in open(infilename):
         t = l.split()
         if l[0] == '*':
@@ -48,9 +54,16 @@ def dedrude(infilename, outfilename):
     f = open(outfilename, 'w')
     f.write(''.join(buf))
     f.close()
-
+    log.info('Wrote new CHARMM CARD '+outfilename)
 
 
 if __name__ == '__main__':
     import sys
+
+    logging.getLogger('CHARMMUtil')
+    if len(sys.argv) < 3:
+        logging.error('Specify input and output CHARMM CARD filenames')
+        exit()
+
+    logging.basicConfig(level = logging.INFO)    
     dedrude(sys.argv[1], sys.argv[2])

@@ -12,8 +12,7 @@ and the homebrew :py:mod:`QChemIO`.
 #TODO SHOULD WE ARCHIVE ELECTRONIC STRUCTURE CONVERGENCE INFORMATION?
 
 from glob import glob
-import argparse, numpy, os, os.path, shutil, sys, warnings
-
+import logging, numpy, os, os.path, shutil, sys, warnings
 
 try:
     import tables
@@ -36,7 +35,6 @@ Please check that PYTHONPATH is set correctly.
 #Internal modules
 from ParseOutput import ParseOutput
 from Units import kcal_mol
-
 
 class CHARMM_CARD(tables.IsDescription):
     """
@@ -79,6 +77,9 @@ def LoadCHARMM_CARD(h5table, CARDfile):
 
     .. versionadded:: 0.1
     """
+
+    log = logging.getLogger('Archive.LoadCHARMM_CARD')
+
     state = 'title'
     for l in open(CARDfile):
         if state == 'title':
@@ -102,8 +103,11 @@ def LoadCHARMM_CARD(h5table, CARDfile):
             data.append()
             thisnumatoms += 1
 
-    assert thisnumatoms == numatoms, 'Did not read in expected number of atoms.'
-    print 'Loaded CHARMM file', CARDfile, 'into', h5table
+    if thisnumatoms == numatoms:
+        log.error("""Did not read in expected number of atoms.
+Expected %d but only %d atoms were received.""" % (numatoms, thisnumatoms))
+
+    log.info('Loaded CHARMM file '+ CARDfile + ' into HDF5 table ' + h5table)
     h5table.flush()
 
 
@@ -118,7 +122,10 @@ def CheckIfRunning(filename):
     then check working directories?
     """
     #TODO
+    log = logging.getLogger('Archive.CheckIfRunning')
+    log.critical('NOT IMPLEMENTED')
     return False
+
 
 
 def RunQChemAgain(filename):
@@ -136,6 +143,86 @@ def RunQChemAgain(filename):
     convergence, an SCF without MOM should be run to determine when the SCF
     starts oscillating. MOM should be set to start just before the oscillation
     """
+    #TODO
+    log = logging.getLogger('Archive.RunQChemAgain')
+    log.critical('NOT IMPLEMENTED')
+    return False
+
+
+
+def RecordIntoHDF5CArray(data, h5data, location, name, atom = tables.atom.FloatAtom(), DoOverwrite = False):
+    """Data to record
+       HDF5 file
+       Location in HDF5
+       Name to make"""
+
+    log = logging.getLogger('Archive.RecordIntoHDF5CArray')
+
+    try:
+        myarray = h5data.createCArray(where = location, name = name, atom = atom,
+           shape = data.shape, createparents = True)
+    except tables.exceptions.NodeError:
+        #Already in there
+        if DoOverwrite:
+            log.info('Overwriting existing HDF5 CArray '+os.path.join(location, name))
+            myarray= h5data.getNode(location, name)
+            #Same shape? If not, delete and recreate
+            if myarray.shape != data.shape:
+                h5data.removeNode(where = location, name = name)
+                myarray = h5data.createCArray(where = location, title = name,
+                    name = name, atom = atom, shape = data.shape, createparents = True)
+        else:
+            log.info('HDF5 CArray already exists: '+os.path.join(location, name)+'\nSkipping.')
+            return
+
+    myarray[:] = data
+ 
+    log.info('Archiving HDF5 CArray ' + os.path.join(location, name) + ':\n' + str(myarray[:]))
+
+
+
+def RecordIntoHDF5EArray(data, h5data, location, name, position = None, atom = tables.atom.FloatAtom(), DoOverwrite = False):
+
+    log = logging.getLogger('Archive.RecordIntoHDF5EArray')
+
+    #Currently hard coded for one-dimensional arrays
+    try:
+        myarray = h5data.createEArray(where = location, name = name,
+                      atom = atom, shape = (0,), title = name,
+                      expectedrows = 2, createparents = True)
+    except tables.exceptions.NodeError:
+        #Already in there
+        if DoOverwrite:
+            myarray = h5data.getNode(location, name)
+        else:
+            log.info('HDF5 EArray already exists: '+os.path.join(location, name)+'\nSkipping.')
+            return
+
+    #Data is either a scalar or an entire array
+    #If scalar, position MUST be specified
+
+    try:
+        N = len(data)
+        while N > len(myarray):
+            myarray.append([numpy.NaN])
+
+        myarray[:] = data
+        log.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
+        for idx, datum in enumerate(data):
+            log.info('Archived '+str(datum)+' in position '+str(idx))
+    except TypeError:
+        if position == None:
+            log.error("""Requested archival of scalar datum into EArray but position in EArray was not given.
+Datum was NOT archived.""")
+            return
+
+        while position > len(myarray):
+            myarray.append([numpy.NaN])
+        myarray[position] = data
+
+        log.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
+        log.info('Archived '+str(data)+' in position '+str(position))
+
 
 
 def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = False, DoCheckPoint = False, DoOverwrite = False):
@@ -162,6 +249,8 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
 
     .. versionadded:: 0.1
     """
+    log = logging.getLogger('Archive.LoadEmUp')
+
     compress = tables.Filters(complevel = 9, complib = 'zlib')
     h5data = tables.openFile(h5filename, mode = 'a', filters = compress,
         title = 'H2Pc')
@@ -198,25 +287,26 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                         title = cardtitle, createparents = True)
                     LoadCHARMM_CARD(thischarmmcard, cwdfile)
                 except tables.exceptions.NodeError:
-                    #print cwdfile, 'already exists; skipping.'
-                    continue #Force continue
-                    #TODO replace continue with resetting of table
                     if DoOverwrite:
-                        thischarmmcard = h5data.getNode(
-                        where = os.path.join('/' + root, cwdh5name), \
-                        name = cardname)
+                        log.info('Overwriting existing CHARMM CARD in HDF5 table '+os.path.join(location, name))
+                        h5data.removeNode(location, name)
+                        thischarmmcard = h5data.createTable(
+                            where = os.path.join('/' + root, cwdh5name), \
+                            name = cardname, \
+                            description = CHARMM_CARD, \
+                            title = cardtitle, createparents = True)
                         LoadCHARMM_CARD(thischarmmcard, cwdfile)
                     else:
-                        pass #print cwdfile, 'already exists; skipping.'
-                
+                        log.info("""HDF5 table already exists: '+os.path.join(location, name)
+Skipping archival of CHARMM CARD.""")
+                        continue
 
 
             ####################################
             # Parse CHARMM or Q-Chem output file
             ####################################
 
-            if len(cwdfile) > 4 \
-                and cwdfile[-4:] == '.out':
+            if len(cwdfile) > 4 and cwdfile[-4:] == '.out':
 
                 #Assume path has the structure [.../]GeomName/Site/jobtype
                 Site = root.split(os.sep)[-2]
@@ -234,16 +324,16 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     isRunning = CheckIfRunning(filename)
                     if isRunning:
                         #If it is running, do nothing
-                        print 'Skipping incomplete calculation in', filename
+                        log.info('Skipping incomplete calculation in file '+ filename)
                         continue
                     
-                    #If it isn't, check for errors
+                    #TODO If it isn't, check for errors
                     
                     #If there are convergence errors:
                     RunQChemAgain(filename)
 
                     if NukeInc:
-                        print 'Deleting incomplete calculation in', root
+                        log.info('Deleting incomplete calculation in directory '+ root)
                         shutil.rmtree(root)
                         continue
 
@@ -252,8 +342,9 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                 else:
                     Environment = 'WithDrude'
                     #TODO Record Drude particle positions
-
-                if 'gs' in calctype:
+                    log.warning("Here I should be recording the Drude particle positions but I'm not!")
+ 
+               if 'gs' in calctype:
                     State = 0
                     if len(EnergyList) > 0:
                         Energy = EnergyList[-1]
@@ -263,44 +354,19 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     State = 1
                     if len(EnergyList) > 0:
                         Energy = EnergyList[-1]
-                    else: continue
-                    # DEPRECATED
-                    # This fixed a bug in Q-Chem wrapper script that
-                    # forgot to parse nonpolarizable
-                    # delta-SCF correctly
-                    # The script itself has been corrected and this
-                    # should no longer be necessary.
-                    """
-                    if calctype == 'dscf-nonpol':
-                        Environment = 'Fixed'
-                        State = 1
-                        Site = root.split(os.sep)[-2]
-                        GeometryName = root.split(os.sep)[-3]#.replace('-', '_')
-                        if isDone: Energy = data[1][-1]
-                        for filename in glob(os.path.join(root, '*/qchem.out')):
-                            #try: 
-                            qcdata = ParseOutput(filename)
-                            if qcdata[-1]:
-                                Energies = qcdata[1]
-                                #print filename, Energies
-                                if len(Energies) >= 2:
-                                    Correction = Energies[-1] - Energies[-2]
-                                    Energy += Correction
-                                    #print Energy, Correction;exit()
-                                else:
-                                    isDone = False
-                            else:
-                                isDone = False
-                            #except TypeError: Energy = None
-                    """
+
                 elif cwdfile == 'td.out' and 'td' in calctype:
                     Dipole = data[2]
 
                 elif 'tddft' in calctype:
                     from QChemTDDFTParser import QChemTDDFTParser
-                    TDAEnergies, TDADipole, Energies, Dipole = QChemTDDFTParser(filename).GetEnergiesAndDipole()
-                    if Energies != None: Energies /= kcal_mol
+                    QCtddft = QChemTDDFTParser(filename)
+                    TDAEnergies, TDADipole, Energies, Dipole = QCtddft.GetEnergiesAndDipole()
+                    TDAMultiplicities, TDAOscillatorStrengths, Multiplicities, OscillatorStrengths = QCtddft.GetOtherData()
 
+                    if TDAEnergies != None: TDAEnergies /= kcal_mol
+                    if Energies != None: Energies /= kcal_mol
+               
                 elif cwdfile == 'qchem.out':
                     """Assume all energy calculations go through the
                     CHARMM/Q-Chem interface.
@@ -308,127 +374,56 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     This avoids double processing of the polarizable simulations"""
                     continue
 
+
+                ################################################
+                # Record completed calculations into HDF5 file #
+                ################################################
+
                 #Update only if job is done
                 if not isDone: continue
 
+                location = os.path.join('/' + GeometryName, Environment, 'Sites', Site)
+
                 #Update a single state's energy
                 if Energy != None:
-                    try:
-                        energyarray = h5data.createEArray(\
-                         where = os.path.join('/' + GeometryName, Environment, 'Sites', Site), \
-                         name = 'Energy', atom = tables.atom.FloatAtom(), shape = (0,), title = 'Energy',
-                         expectedrows = 2, createparents = True)
-                    except tables.exceptions.NodeError:
-                        #Already in there
-                        if DoOverwrite:
-                            energyarray = h5data.getNode(os.path.join('/' + GeometryName, Environment, 'Sites', Site), 'Energy')
-                        else: continue
-
-                    while State > len(energyarray) - 1:
-                        energyarray.append([0.0])
-
-                    energyarray[State] = Energy * kcal_mol
-                    print 'Archiving into ', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Energy')+'['+str(State)+']'
-                    print 'Archived', energyarray, '[' + str(State) + ']'
-
-
+                    RecordIntoHDF5EArray(Energy * kcal_mol, h5data, location, 'Energy', State,  DoOverwrite = DoOverwrite)
                 #Update all energies
                 if Energies != None:
-                    try:
-                        energyarray = h5data.createEArray(\
-                         where = os.path.join('/' + GeometryName, Environment, 'Sites', Site), \
-                         name = 'Energy', atom = tables.atom.FloatAtom(), shape = (0,), title = 'Energy',
-                         expectedrows = 2, createparents = True)
-                    except tables.exceptions.NodeError:
-                        #Already in there
-                        if DoOverwrite:
-                            energyarray = h5data.getNode(os.path.join('/' + GeometryName, Environment, 'Sites', Site), 'Energy')
-                        else: continue
-
-                    while len(Energies) > len(energyarray):
-                        energyarray.append([0.0])
-
-                    print 'Archiving into ', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Energy')
-                    for State, Energy in enumerate(Energies):
-                        energyarray[State] = Energy * kcal_mol
-                        print 'Archived', Energy, '[' + str(State) + ']'
-
-
+                    RecordIntoHDF5EArray(Energies * kcal_mol, h5data, location, 'Energy', DoOverwrite = DoOverwrite)
 
                 #Update a transition dipole
                 if Dipole != None:
-                    try:
-                        location = os.path.join(os.sep, GeometryName, Environment, 'Sites', Site)
-                        dipolearray = h5data.createCArray(where = location,
-                         name = 'Dipole', atom = tables.atom.FloatAtom(), shape = Dipole.shape, createparents = True)
-                    except tables.exceptions.NodeError:
-                        #Already in there
-                        if DoOverwrite:
-                            dipolearray = h5data.getNode(location, 'Dipole')
-                        else:
-                            print 'Skipping data that is already present', location
-                            continue
-
-                    dipolearray[:,:,:] = Dipole
-                    print 'Archiving', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Dipole')
-                    print 'Archived transition dipole matrix'
-                    print dipolearray[:,:,:]
-
+                    RecordIntoHDF5CArray(Dipole, h5data, location, 'Dipole', DoOverwrite = DoOverwrite)
 
                 if 'tddft' in calctype: #Store also TDA energies and dipoles
-
-                    try:
-                        energyarray = h5data.createEArray(\
-                         where = os.path.join('/' + GeometryName, Environment, 'Sites', Site), \
-                         name = 'TDAEnergy', atom = tables.atom.FloatAtom(), shape = (0,), title = 'Energy',
-                         expectedrows = 2, createparents = True)
-                    except tables.exceptions.NodeError:
-                        #Already in there
-                        if DoOverwrite:
-                            energyarray = h5data.getNode(os.path.join('/' + GeometryName, Environment, 'Sites', Site), 'Energy')
-                        else: continue
-
-                    while len(TDAEnergies) > len(energyarray):
-                        energyarray.append([0.0])
-
-                    energyarray[:] = TDAEnergies
-                    print 'Archiving into ', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Energy')
-                    for State, Energy in enumerate(TDAEnergies):
-                        energyarray[State] = Energy
-                        print 'Archived', Energy, '[' + str(State) + ']'
+                    RecordIntoHDF5EArray(TDAEnergies * kcal_mol, h5data, location, 'TDAEnergy', DoOverwrite = DoOverwrite)
+                    RecordIntoHDF5CArray(TDADipole, h5data, location, 'TDADipole', DoOverwrite = DoOverwrite)
+                    RecordIntoHDF5CArray(TDAMultiplicities, h5data, location, 'TDAMultiplicities', atom = tables.atom.IntAtom(), DoOverwrite = DoOverwrite)
+                    RecordIntoHDF5CArray(Multiplicities, h5data, location, 'Multiplicities', atom = tables.atom.IntAtom(), DoOverwrite = DoOverwrite)
+                    RecordIntoHDF5CArray(TDAOscillatorStrengths, h5data, location, 'TDAOscillatorStrengths', DoOverwrite = DoOverwrite)
+                    RecordIntoHDF5CArray(OscillatorStrengths, h5data, location, 'OscillatorStrengths', DoOverwrite = DoOverwrite)
 
 
-                    try:
-                        location = os.path.join(os.sep, GeometryName, Environment, 'Sites', Site)
-                        dipolearray = h5data.createCArray(where = location,
-                         name = 'TDADipole', atom = tables.atom.FloatAtom(), shape = TDADipole.shape, createparents = True)
-                    except tables.exceptions.NodeError:
-                        #Already in there
-                        if DoOverwrite:
-                            dipolearray = h5data.getNode(location, 'Dipole')
-                        else: continue
+                ############
+                # Clean up #
+                ############
 
-                    dipolearray[:,:,:] = TDADipole
-                    print 'Archiving', os.path.join(os.sep, GeometryName, Environment, 'Sites', Site, 'Dipole')
-                    print 'Archived transition dipole matrix'
-                    print dipolearray[:,:,:]
-
-
-                #If specified, clean up
                 if Nuke:
-                    print 'Deleting', root
+                    log.info('Deleting files in directory ' + root)
                     shutil.rmtree(root)
 
 
-
-    #Update history of the database 
     if h5data.isUndoEnabled() and DoCheckPoint:
-        print 'Checkpointing database at mark', h5data.mark()
+        mark = h5data.mark()
+        log.info('Checkpointing HDF5 database at mark point '+str(mark))
+
     h5data.close()
 
 
 
 if __name__ == '__main__':
+    import argparse
+
     parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
     parser.add_argument('workingdir', nargs = '?', default = '.', help = 'Root to recurse from')
     parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
@@ -436,7 +431,12 @@ if __name__ == '__main__':
     parser.add_argument('--nukeinc', action = 'store_true', default = False, help = 'Deletes incomplete output files')
     parser.add_argument('--checkpoint', action = 'store_true', default = False, help = 'Create new Pytables checkpoint in HDF5 file')
     parser.add_argument('--force', action = 'store_true', default = False, help = 'Forces reloading of existing data')
+    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
+
     args = parser.parse_args()
 
+    logging.getLogger('CHARMMUtil')
+
+    logging.basicConfig(level = args.loglevel)
 
     LoadEmUp(args.workingdir, args.h5file, args.nuke, args.nukeinc, args.checkpoint, args.force)

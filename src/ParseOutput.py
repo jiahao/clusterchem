@@ -1,4 +1,4 @@
-#!/usr/env/bin python
+#!/usr/bin/env python
 """
 Routines for parsing CHARMM and Q-Chem output files
 
@@ -9,7 +9,7 @@ supported.)
 .. versionadded:: 0.1
 """
 
-import numpy, sys
+import logging, numpy, sys
 #My custom module
 try:
     import QChemIO
@@ -141,6 +141,15 @@ def ParseOutput(filename):
 
 if __name__ == '__main__':
     from glob import glob
-    for blob in glob(sys.argv[1:]):
-        for fname in blob:
-            print ParseOutput(fname)
+    from OSUtils import WildCardExpandedFileList
+
+    log = logging
+    log.setLevel(logging.INFO)
+    if len(sys.argv) < 2:
+        log.error('Please specify Q-Chem output files to parse')
+        exit()
+
+    for filename in WildCardExpandedFileList(sys.argv[1:]):
+        log.info('Parsing Q-Chem output file '+filename)
+        output = ParseOutput(filename)
+        log.info(output)

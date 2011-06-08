@@ -9,7 +9,7 @@ import os, sys
 from glob import glob
 
 def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist.txt', 
-    sge_jobname = 'h2pc-qmmm-rmt'):
+    sge_jobname = 'h2pc-qmmm-rmt', overwrite = False):
 
     """
     Prepares jobs to be executed in a term:`SGE` array job environment.
@@ -42,7 +42,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
     from CHARMMUtil import dedrude
     from OSUtils import chdirn
 
-    if os.path.exists(joblist):
+    if os.path.exists(joblist) and not overwrite:
         print 'Skipping population of', joblist
 
         #count numjobs
@@ -52,16 +52,20 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
     else:
         alljobs = []
 
-        #for coordfile in glob('*.d.cor'):
-        #    coordfileroot = coordfile[:-6]
-
         for coordfile in glob('*.cor'):
             coordfileroot = coordfile[:-4]
 
-            #Generates coordinate file without Drude particles
-            nonpolcoordfile = coordfileroot +'.cor'
-            if not os.path.exists(nonpolcoordfile):
-                dedrude(coordfile, nonpolcoordfile)
+            isPolarizable = False
+            if coordfileroot[-2:] == '.d': #Has Drude particles
+                isPolarizable = True
+                #Generates coordinate file without Drude particles
+                nonpolcoordfile = coordfileroot[:-2] +'.cor'
+                if not os.path.exists(nonpolcoordfile):
+                    dedrude(coordfile, nonpolcoordfile)
+
+                #XXX Monkey patch to hijack polarizable job generation with non-polarizable ones
+                isPolarizable = False
+                coordfileroot = coordfileroot[:-2]
 
             if True or not os.path.exists(coordfileroot):
                 print 'Preparing', coordfileroot
@@ -83,9 +87,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
                 #makejobs(coordfileroot)
                 os.chdir('..')
 
-            alljobs += iteratejobs(coordfileroot)
-
-
+            alljobs += iteratejobs(coordfileroot, isPolarizable)
 
         f = open(joblist, 'w')
         for i, j in enumerate(alljobs):
@@ -103,7 +105,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist
     x.args.N = sge_jobname
     x.args.t = '1-'+str(numjobs)
     x.args.o = '$JOB_NAME.$JOB_ID.$TASK_ID.stdout.log'.replace('$', '\$')
-    x.args.command = 'python '+sys.argv[0]
+    x.args.command = 'python '+sys.argv[0]+' --taskfile '+joblist
     x.args.b = 'y'
     #x.args.v = 'PYTHONPATH=$PYTHONPATH:'+os.path.dirname(sys.argv[0])
     print '#To submit the array job, run this command:'
@@ -146,19 +148,32 @@ def copywild(src, dest, overwrite=False, Verbose = True):
                 print 'Warning: could not make symlink. ', os.path.abspath(fname), '-X->', os.path.abspath(destfname)
 
 
-def iteratejobs(corfileroot, mollist = '../mol.list'):
+def iteratejobs(corfileroot, isPolarizable = False, jobtypes = ('tddft',), mollist = '../mol.list'):
     """
     Creates a hierarchy of subdirectories in corefileroot
     of the form 'resid/jobtype' and return information about the jobs created.
 
     Iterates over residues in mollist, then over a hardcoded set of jobtypes.
 
-    Thwe code for populating individual directories is currently commented out,
+    The code for populating individual directories is currently commented out.
 
     If a file ending in .out is found at any time during the traversal, an
     empty list will be returned immediately.
 
-    :returns: Parameters for py:func:`domyjob`
+    jobtypes is an iterable with the following strings as valid elements:
+    
+    tddft - Time-dependent density functional theory
+    Additional experimental job types:
+    gs - Ground state calculation only
+    dscf - Delta SCF calculation for excited state
+    td   - CDFT-CI transition dipole calculation using a gs and a dscf output
+
+    For each of these there is an additional variant - tddft-nonpol, td-nonpol, etc.
+    each of which specifies a nonpolarizable environment. tddft, td, etc. refers to
+    the default polarizable calculation. The -nonpol suffix will be automatically
+    added if isPolarizable = False.
+
+    :returns: Parameters for py:func:`domyjob`    
     :rtype: list of tuples (_, 3)
 
     .. versionadded:: 0.1
@@ -172,9 +187,9 @@ def iteratejobs(corfileroot, mollist = '../mol.list'):
     jobdata = []
 
     #Initialize calculations
-    #for job in ['gs-nonpol', 'dscf-nonpol', 'gs', 'dscf']:
-    #for job in ['td', 'td-nonpol']:
-    for job in ['tddft-nonpol']:
+
+    for job in jobtypes:
+        if not isPolarizable: job += '-nonpol'
         for resid in resids:
             #If no output files exist
             if len(glob(os.path.join(corfileroot, str(resid), job, '*.out'))) == 0:
@@ -263,15 +278,24 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
             os.unlink(filename)
             print 'Deleted existing output file', filename
 
+    rtfiles = ('h2pc.rtf', 'znpc.rtf')
+
     if jobtype == 'gs-nonpol':
-        RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-GROUND.IN', resid)
+        #RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-GROUND.IN', resid)
+        Q = QChemInput('QCHEM-GROUND.IN')
+        Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, rtfiles, Q)
+        Q.write('qchem.working.in')
+        Q.execute('qchem.out', qchemcmd = qchemcmd, parse = False)
     elif jobtype == 'dscf-nonpol':
-        RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-DSCF.IN', resid)
+        #RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-DSCF.IN', resid)
+        Q = QChemInput('QCHEM-DSCF.IN')
+        Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, rtfiles, Q)
+        Q.write('qchem.working.in')
+        Q.execute('qchem.out', qchemcmd = qchemcmd, parse = False)
     elif jobtype == 'tddft-nonpol':
         #Do not use CHARMM interface
-        #TODO Replace all nonpol calculations!!
         Q = QChemInput('QCHEM-TDDFT.IN')
-        Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, 'h2pc.rtf', Q)
+        Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile, rtfiles, Q)
         Q.write('qchem.working.in')
         Q.execute('qchem.out', qchemcmd = qchemcmd, parse = False)
 
@@ -378,13 +402,16 @@ if __name__ == '__main__':
         False, help = 'Continue calculation even output file exists')
 
     parser.add_argument('--qcprog', action = 'store', default = \
-        'qchem40.beta', help = 'Name of Q-Chem binary to execute')
-    
+        'qchem40', help = 'Name of Q-Chem binary to execute')
+
+    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
+
     args = parser.parse_args()
 
+    logging.basicConfig(level = args.loglevel)
 
     if 'SGE_TASK_ID' not in os.environ:
-        PrepareJobs()
+        PrepareJobs(joblist = args.taskfile, overwrite = args.overwrite)
     else: #In SGE array task
         SGEArrayTaskHandler(ge_task_id = os.environ['SGE_TASK_ID'], \
             taskinfofile = args.taskfile, overwrite = args.overwrite, qchemcmd = args.qcprog)

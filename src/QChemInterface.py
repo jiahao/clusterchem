@@ -24,7 +24,7 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
     :type CHARMM_CARD_file: string
 
     :parameter CHARMM_RTFile: Name of CHARMM Residue Topology File containing force field parameters (notably, atomic charges)
-    :type CHARMM_RTFile: string
+    :type CHARMM_RTFile: string or iterable
 
     :parameter InputDeck: Q-Chem input deck. (Optional.) \
     If value is a string, is treated as a filename for QChemInput object. \
@@ -43,11 +43,21 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
     '''
     #Load fixed charge specification in RTF file
     ChargeParameter = {}
-    for l in open(CHARMM_RTFile):
-        if l[:4].upper() == 'ATOM':
-            t = l.split()
-            AtomType, Charge = t[1].upper(), float(t[3])
-            ChargeParameter[AtomType] = Charge
+    try:
+        for l in open(CHARMM_RTFile):
+            if l[:4].upper() == 'ATOM':
+                t = l.split()
+                AtomType, Charge = t[1].upper(), float(t[3])
+                ChargeParameter[AtomType] = Charge
+
+    except TypeError:
+        #Not a string, assume it's an iterable of strings
+        for filename in CHARMM_RTFile:
+            for l in open(filename):
+                if l[:4].upper() == 'ATOM':
+                    t = l.split()
+                    AtomType, Charge = t[1].upper(), float(t[3])
+                    ChargeParameter[AtomType] = Charge
 
 
     #Generate $external_charges and $molecule blocks for Q-Chem input

@@ -52,3 +52,14 @@ def find_files(directory, pattern):
 
 
 
+def WildCardExpandedFileList(iterable):
+    """Takes an iterable of filenames or wildcarded selections parseable by
+    glob and returns a uniq-ed, sorted list of filenames"""
+
+    from glob import glob
+    filenames = set()
+    for blob in iterable:
+        filenames = filenames.union(set(glob(blob)))
+    return sorted(filenames)
+    
+
