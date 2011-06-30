@@ -13,9 +13,8 @@ This is a standalone executable.
 .. versionadded:: 0.1
 """
 
-import numpy
+import logging, numpy, sys
 from scipy.stats.kde import gaussian_kde
-import sys
 from Units import eV
 
 try:

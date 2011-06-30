@@ -103,11 +103,11 @@ def LoadCHARMM_CARD(h5table, CARDfile):
             data.append()
             thisnumatoms += 1
 
-    if thisnumatoms == numatoms:
+    if thisnumatoms != numatoms:
         log.error("""Did not read in expected number of atoms.
 Expected %d but only %d atoms were received.""" % (numatoms, thisnumatoms))
 
-    log.info('Loaded CHARMM file '+ CARDfile + ' into HDF5 table ' + h5table)
+    log.info('Loaded CHARMM file '+ CARDfile + ' into HDF5 table ' + str(h5table))
     h5table.flush()
 
 
@@ -146,6 +146,7 @@ def RunQChemAgain(filename):
     #TODO
     log = logging.getLogger('Archive.RunQChemAgain')
     log.critical('NOT IMPLEMENTED')
+    log.critical('Run again manually: %s', filename)
     return False
 
 
@@ -216,8 +217,9 @@ def RecordIntoHDF5EArray(data, h5data, location, name, position = None, atom = t
 Datum was NOT archived.""")
             return
 
-        while position > len(myarray):
+        while position >= len(myarray):
             myarray.append([numpy.NaN])
+        
         myarray[position] = data
 
         log.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
@@ -255,7 +257,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
     h5data = tables.openFile(h5filename, mode = 'a', filters = compress,
         title = 'H2Pc')
     if not h5data.isUndoEnabled(): h5data.enableUndo(filters = compress)
-    for root, _, files in os.walk(path):
+    for root, subdirs, files in os.walk(path):
         for cwdfile in files:
 
             filename = os.path.join(root, cwdfile) #Relative path-qualified filename
@@ -275,14 +277,15 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                 # will need to be re-equilibrated as part of the SCF process
 
                 cardtitle = 'CHARMM CARD Coordinates'
-                cardname = 'CHARMM_CARD'
+                cardname = name = 'CHARMM_CARD'
                 
                 cwdh5name = cwdfile[:-4]#.replace('-', '_')
 
+                location = os.path.join('/' + root, cwdh5name)
                 try:
                     thischarmmcard = h5data.createTable(
-                        where = os.path.join('/' + root, cwdh5name), \
                         name = cardname, \
+                        where = location, \
                         description = CHARMM_CARD, \
                         title = cardtitle, createparents = True)
                     LoadCHARMM_CARD(thischarmmcard, cwdfile)
@@ -291,14 +294,13 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                         log.info('Overwriting existing CHARMM CARD in HDF5 table '+os.path.join(location, name))
                         h5data.removeNode(location, name)
                         thischarmmcard = h5data.createTable(
-                            where = os.path.join('/' + root, cwdh5name), \
+                            where = location, \
                             name = cardname, \
                             description = CHARMM_CARD, \
                             title = cardtitle, createparents = True)
                         LoadCHARMM_CARD(thischarmmcard, cwdfile)
                     else:
-                        log.info("""HDF5 table already exists: '+os.path.join(location, name)
-Skipping archival of CHARMM CARD.""")
+                        log.info('HDF5 table already exists: '+os.path.join(location, name)+ ' skipping archival.')
                         continue
 
 
@@ -344,7 +346,7 @@ Skipping archival of CHARMM CARD.""")
                     #TODO Record Drude particle positions
                     log.warning("Here I should be recording the Drude particle positions but I'm not!")
  
-               if 'gs' in calctype:
+                if 'gs' in calctype:
                     State = 0
                     if len(EnergyList) > 0:
                         Energy = EnergyList[-1]
@@ -411,6 +413,27 @@ Skipping archival of CHARMM CARD.""")
                 if Nuke:
                     log.info('Deleting files in directory ' + root)
                     shutil.rmtree(root)
+
+        #Clean up dangling subdirectories
+        #XXX HORRIBLE HACK
+        if Nuke and len(subdirs) == 0 and 'h2zn' in root and \
+            (len(root.split(os.path.sep)) - len(path.split(os.path.sep))) <= 2:
+            #We only want to go up to path/h2zn-???{,?}/??? to check for lack
+            #of further subdirectories
+            log.info('Cleaning up directory ' + root)
+            shutil.rmtree(root)
+
+            #Naive recursion all the way up to original path, but
+            #DO NOT DELETE ORIGINAL
+            rootup = root
+            while (len(rootup.split(os.path.sep)) - len(path.split(os.path.sep))) > 1:
+                #Go up - there MUST be a better way to do this!
+                rootup = os.path.sep.join(rootup.split(os.path.sep)[:-1])
+                subdirs = os.walk(rootup).next()[1]
+                if len(subdirs) == 0:
+                    log.info('Cleaning up directory ' + rootup)
+                    shutil.rmtree(rootup)
+
 
 
     if h5data.isUndoEnabled() and DoCheckPoint:

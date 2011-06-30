@@ -5,7 +5,7 @@ Generates QM/MM electronic structure jobs and submits them to a Sun Grid Engine 
 
 .. versionadded:: 0.1
 """
-import os, sys
+import logging, os, sys
 from glob import glob
 
 def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*', joblist = 'sgearraytasklist.txt', 
