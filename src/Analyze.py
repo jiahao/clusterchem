@@ -199,7 +199,7 @@ Coordinates:
     h5data.close()
 
 
-def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc-data/sub-0/1/mol.list'):
+def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list', outtaskfile = 'sgearraytasklist-missing.txt'):
     """
     Scans the HDF5 file for missing data.
 
@@ -219,6 +219,8 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc
 
     from numpy import zeros
 
+    logger = logging.getLogger('Analyze.LocateMissingData')
+
     resids = []
     for l in open(mollist):
         try:
@@ -229,7 +231,8 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc
     data = [('Energy', 2), ('Dipole', (3, 2, 2))]
 
     #Types of calculations
-    calctypes = ['gs', 'dscf', 'td', 'gs-nonpol', 'dscf-nonpol', 'td-nonpol']
+    #calctypes = ['gs', 'dscf', 'td', 'gs-nonpol', 'dscf-nonpol', 'td-nonpol']
+    calctypes = ['tddft-nonpol']
 
     #Enumerate coordinates
     
@@ -247,7 +250,10 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc
         for resid in resids:
             for calctype in calctypes:
                 isok[(coord, resid, calctype)] = False
+    
+    calctype = 'tddft-nonpol'
 
+    n = 0
     for node in h5data:
         path = node._v_pathname.split('/')
         try:
@@ -255,42 +261,44 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '/home/cjh/rmt/h2pc
             env   = path[2] #Fixed or WithDrude
             resid = path[-2]
         except IndexError: continue
-        
+       
         for name, dim in data:
             if node._v_name == name:                
                 if name == 'Energy':
-                    okenergy1 = (node[0] != 0.0)
-                    if env == 'Fixed': calctype = 'gs-nonpol'
-                    else: calctype = 'gs'
-                    isok[(coord, resid, calctype)] = okenergy1
-                    if len(node) >= 2:
-                        okenergy2 = (node[1] != 0.0) 
-                        if env == 'Fixed': calctype = 'dscf-nonpol'
-                        else: calctype = 'dscf'
-                        isok[(coord, resid, calctype)] = okenergy2
-
-                elif name == 'Dipole':                    
-                    okdipole = (node.shape == dim) and not (node[:,:,:] == zeros(dim)).all()
-                    if env == 'Fixed': calctype = 'td-nonpol'
-                    else: calctype = 'td'
-                    isok[(coord, resid, calctype)] = okdipole
+                    for energy in node:
+                        thisisok = not ((energy == 0.0) or numpy.isnan(energy))
+                        isok[(coord, resid, calctype)] = thisisok
+                        if not thisisok:
+                            print n, coord, resid, calctype, energy 
+                            n += 1
+                #elif name == 'Dipole':                    
+                #    okdipole = (node.shape == dim) \
+                #        and not (node[:,:,:] == zeros(dim)).all() \
+                #        and not (numpy.isnan[:,0,:).any()
+                #    isok[(coord, resid, calctype)] = okdipole
 
     h5data.close()
 
 
     #Collates job data
-    n = 1
+    n = 0
     buf = []
     for coord in coords:
         for resid in resids:  
-            #for calctype in [x for x in calctypes if 'nonpol' in x]:
-            for calctype in ['gs-nonpol', 'dscf-nonpol', 'td-nonpol']:
+            for calctype in calctypes:
                 if not isok[(coord, resid, calctype)]:
                     buf.append('\t'.join((str(n), coord, resid, calctype)))
                     n += 1
 
-    print '\n'.join(buf)
-    
+    if n > 0:
+        if outtaskfile is not None:
+            f = open(outtaskfile, 'w')
+            f.write('\n'.join(buf))
+            f.close()
+            logger.warning('Wrote info on %d missing jobs to %s', n, outtaskfile)
+        else: #print to console
+            logger.warning('%d missing jobs found:\n%s', n, '\n'.join(buf))
+            
 
 if __name__ == '__main__':
     import argparse
@@ -302,5 +310,5 @@ if __name__ == '__main__':
     logging.basicConfig(level = args.loglevel)
 
     #histogram_energies(args.h5file)
-    analyze_h2pc_tdip(args.h5file)
-    #LocateMissingData(args.h5file)
+    #analyze_h2pc_tdip(args.h5file)
+    LocateMissingData(args.h5file)

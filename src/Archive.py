@@ -35,6 +35,25 @@ Please check that PYTHONPATH is set correctly.
 #Internal modules
 from ParseOutput import ParseOutput
 from Units import kcal_mol
+import SGE
+
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
+    parser.add_argument('workingdir', nargs = '?', default = '.', help = 'Root to recurse from')
+    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
+    parser.add_argument('--taskfile', action = 'store', default = 'sgearraytasklist.txt', help = 'Name of SGE array task file')
+    parser.add_argument('--nuke', action = 'store_true', default = False, help = 'Deletes files after parsing')
+    parser.add_argument('--nukeinc', action = 'store_true', default = False, help = 'Deletes incomplete output files')
+    parser.add_argument('--checkpoint', action = 'store_true', default = False, help = 'Create new Pytables checkpoint in HDF5 file')
+    parser.add_argument('--force', action = 'store_true', default = False, help = 'Forces reloading of existing data')
+    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
+    args = parser.parse_args()
+
+
 
 class CHARMM_CARD(tables.IsDescription):
     """
@@ -78,7 +97,7 @@ def LoadCHARMM_CARD(h5table, CARDfile):
     .. versionadded:: 0.1
     """
 
-    log = logging.getLogger('Archive.LoadCHARMM_CARD')
+    logger = logging.getLogger('Archive.LoadCHARMM_CARD')
 
     state = 'title'
     for l in open(CARDfile):
@@ -104,26 +123,54 @@ def LoadCHARMM_CARD(h5table, CARDfile):
             thisnumatoms += 1
 
     if thisnumatoms != numatoms:
-        log.error("""Did not read in expected number of atoms.
+        logger.error("""Did not read in expected number of atoms.
 Expected %d but only %d atoms were received.""" % (numatoms, thisnumatoms))
 
-    log.info('Loaded CHARMM file '+ CARDfile + ' into HDF5 table ' + str(h5table))
+    logger.info('Loaded CHARMM file '+ CARDfile + ' into HDF5 table ' + str(h5table))
     h5table.flush()
 
 
 
-def CheckIfRunning(filename):
+def CheckIfRunning(filename = None, taskfile = args.taskfile):
     """
     Is the process responsible for producing filename still running?
 
     Need to infer this from qstat
 
     Get list of running SGE processes
-    then check working directories?
+    then check working directories
     """
-    #TODO
-    log = logging.getLogger('Archive.CheckIfRunning')
-    log.critical('NOT IMPLEMENTED')
+
+    logger = logging.getLogger('Archive.CheckIfRunning')
+
+    #Break down filename into job info
+    filename_token = filename.split(os.sep)
+    myjobtype = filename_token[-2]
+    mymol = filename_token[-3]
+    mysnapshot = filename_token[-4]
+
+    #Retrieve mapping between job array id and job info
+    tasklist = []
+    for line in open('sgearraytasklist.txt'):
+        tasklist.append(line.split())
+    myjobids = [job[0] for job in tasklist if job[1] == myjobtype and job[2] == mymol and job[3] == mysnapshot]
+
+    if len(myjobids) == 0: 
+        logger.warning('Cannot find job array corresponding to %s, assuming not running anymore', filename)
+        return False
+
+    assert len(myjobids) == 1, 'More than one job array matching '+filename
+    
+    myjobid = myjobids[0]
+
+    #Poll queue
+    for job in SGE.SGE().getuserjobs():
+        if myjobid in job._ja_tasklist: #It's still there!
+            logger.info('Job is in SGE queue with status %s', job.state)
+            return True
+
+    #No matches
+    logger.info('Job is not listed in SGE queue')
     return False
 
 
@@ -143,10 +190,10 @@ def RunQChemAgain(filename):
     convergence, an SCF without MOM should be run to determine when the SCF
     starts oscillating. MOM should be set to start just before the oscillation
     """
+
     #TODO
-    log = logging.getLogger('Archive.RunQChemAgain')
-    log.critical('NOT IMPLEMENTED')
-    log.critical('Run again manually: %s', filename)
+    logger = logging.getLogger('Archive.RunQChemAgain')
+    logger.critical('Run again manually: %s', filename)
     return False
 
 
@@ -157,7 +204,7 @@ def RecordIntoHDF5CArray(data, h5data, location, name, atom = tables.atom.FloatA
        Location in HDF5
        Name to make"""
 
-    log = logging.getLogger('Archive.RecordIntoHDF5CArray')
+    logger = logging.getLogger('Archive.RecordIntoHDF5CArray')
 
     try:
         myarray = h5data.createCArray(where = location, name = name, atom = atom,
@@ -165,7 +212,7 @@ def RecordIntoHDF5CArray(data, h5data, location, name, atom = tables.atom.FloatA
     except tables.exceptions.NodeError:
         #Already in there
         if DoOverwrite:
-            log.info('Overwriting existing HDF5 CArray '+os.path.join(location, name))
+            logger.info('Overwriting existing HDF5 CArray '+os.path.join(location, name))
             myarray= h5data.getNode(location, name)
             #Same shape? If not, delete and recreate
             if myarray.shape != data.shape:
@@ -173,18 +220,18 @@ def RecordIntoHDF5CArray(data, h5data, location, name, atom = tables.atom.FloatA
                 myarray = h5data.createCArray(where = location, title = name,
                     name = name, atom = atom, shape = data.shape, createparents = True)
         else:
-            log.info('HDF5 CArray already exists: '+os.path.join(location, name)+'\nSkipping.')
+            logger.info('HDF5 CArray already exists: '+os.path.join(location, name)+'\nSkipping.')
             return
 
     myarray[:] = data
  
-    log.info('Archiving HDF5 CArray ' + os.path.join(location, name) + ':\n' + str(myarray[:]))
+    logger.info('Archiving HDF5 CArray ' + os.path.join(location, name) + ':\n' + str(myarray[:]))
 
 
 
 def RecordIntoHDF5EArray(data, h5data, location, name, position = None, atom = tables.atom.FloatAtom(), DoOverwrite = False):
 
-    log = logging.getLogger('Archive.RecordIntoHDF5EArray')
+    logger = logging.getLogger('Archive.RecordIntoHDF5EArray')
 
     #Currently hard coded for one-dimensional arrays
     try:
@@ -196,7 +243,7 @@ def RecordIntoHDF5EArray(data, h5data, location, name, position = None, atom = t
         if DoOverwrite:
             myarray = h5data.getNode(location, name)
         else:
-            log.info('HDF5 EArray already exists: '+os.path.join(location, name)+'\nSkipping.')
+            logger.info('HDF5 EArray already exists: '+os.path.join(location, name)+'\nSkipping.')
             return
 
     #Data is either a scalar or an entire array
@@ -208,12 +255,12 @@ def RecordIntoHDF5EArray(data, h5data, location, name, position = None, atom = t
             myarray.append([numpy.NaN])
 
         myarray[:] = data
-        log.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
+        logger.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
         for idx, datum in enumerate(data):
-            log.info('Archived '+str(datum)+' in position '+str(idx))
+            logger.info('Archived '+str(datum)+' in position '+str(idx))
     except TypeError:
         if position == None:
-            log.error("""Requested archival of scalar datum into EArray but position in EArray was not given.
+            logger.error("""Requested archival of scalar datum into EArray but position in EArray was not given.
 Datum was NOT archived.""")
             return
 
@@ -222,8 +269,8 @@ Datum was NOT archived.""")
         
         myarray[position] = data
 
-        log.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
-        log.info('Archived '+str(data)+' in position '+str(position))
+        logger.info('Archiving HDF5 EArray ' + os.path.join(location, name) + ':')
+        logger.info('Archived '+str(data)+' in position '+str(position))
 
 
 
@@ -251,7 +298,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
 
     .. versionadded:: 0.1
     """
-    log = logging.getLogger('Archive.LoadEmUp')
+    logger = logging.getLogger('Archive.LoadEmUp')
 
     compress = tables.Filters(complevel = 9, complib = 'zlib')
     h5data = tables.openFile(h5filename, mode = 'a', filters = compress,
@@ -261,6 +308,8 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
         for cwdfile in files:
 
             filename = os.path.join(root, cwdfile) #Relative path-qualified filename
+
+
 
             #Skip symlinks
             if os.path.islink(filename): continue
@@ -291,7 +340,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     LoadCHARMM_CARD(thischarmmcard, cwdfile)
                 except tables.exceptions.NodeError:
                     if DoOverwrite:
-                        log.info('Overwriting existing CHARMM CARD in HDF5 table '+os.path.join(location, name))
+                        logger.info('Overwriting existing CHARMM CARD in HDF5 table '+os.path.join(location, name))
                         h5data.removeNode(location, name)
                         thischarmmcard = h5data.createTable(
                             where = location, \
@@ -300,7 +349,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                             title = cardtitle, createparents = True)
                         LoadCHARMM_CARD(thischarmmcard, cwdfile)
                     else:
-                        log.info('HDF5 table already exists: '+os.path.join(location, name)+ ' skipping archival.')
+                        logger.info('HDF5 table already exists: '+os.path.join(location, name)+ ' skipping archival.')
                         continue
 
 
@@ -326,7 +375,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     isRunning = CheckIfRunning(filename)
                     if isRunning:
                         #If it is running, do nothing
-                        log.info('Skipping incomplete calculation in file '+ filename)
+                        logger.info('Skipping incomplete calculation in file '+ filename)
                         continue
                     
                     #TODO If it isn't, check for errors
@@ -335,7 +384,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                     RunQChemAgain(filename)
 
                     if NukeInc:
-                        log.info('Deleting incomplete calculation in directory '+ root)
+                        logger.info('Deleting incomplete calculation in directory '+ root)
                         shutil.rmtree(root)
                         continue
 
@@ -344,7 +393,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                 else:
                     Environment = 'WithDrude'
                     #TODO Record Drude particle positions
-                    log.warning("Here I should be recording the Drude particle positions but I'm not!")
+                    logger.warning("Here I should be recording the Drude particle positions but I'm not!")
  
                 if 'gs' in calctype:
                     State = 0
@@ -411,16 +460,17 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                 ############
 
                 if Nuke:
-                    log.info('Deleting files in directory ' + root)
+                    logger.info('Deleting files in directory ' + root)
                     shutil.rmtree(root)
 
         #Clean up dangling subdirectories
         #XXX HORRIBLE HACK
-        if Nuke and len(subdirs) == 0 and 'h2zn' in root and \
+        #This needs to check if the job is still running first...
+        if False and Nuke and len(subdirs) == 0 and 'h2zn' in root and \
             (len(root.split(os.path.sep)) - len(path.split(os.path.sep))) <= 2:
             #We only want to go up to path/h2zn-???{,?}/??? to check for lack
             #of further subdirectories
-            log.info('Cleaning up directory ' + root)
+            logger.info('Cleaning up directory ' + root)
             shutil.rmtree(root)
 
             #Naive recursion all the way up to original path, but
@@ -431,33 +481,28 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False, NukeInc = Fa
                 rootup = os.path.sep.join(rootup.split(os.path.sep)[:-1])
                 subdirs = os.walk(rootup).next()[1]
                 if len(subdirs) == 0:
-                    log.info('Cleaning up directory ' + rootup)
+                    logger.info('Cleaning up directory ' + rootup)
                     shutil.rmtree(rootup)
+        
+        #Clean up redirected SGE stdout/stderr streams
+        if root == path:
+            filenames = glob('*.stdout.log')
+            if len(filenames) > 0:
+                logger.info('Cleaning up SGE stdout/stderr streams in ' + root)
 
+            for filename in filenames:
+                os.unlink(filename)
 
 
     if h5data.isUndoEnabled() and DoCheckPoint:
         mark = h5data.mark()
-        log.info('Checkpointing HDF5 database at mark point '+str(mark))
+        logger.info('Checkpointing HDF5 database at mark point '+str(mark))
 
     h5data.close()
 
 
 
 if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
-    parser.add_argument('workingdir', nargs = '?', default = '.', help = 'Root to recurse from')
-    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
-    parser.add_argument('--nuke', action = 'store_true', default = False, help = 'Deletes files after parsing')
-    parser.add_argument('--nukeinc', action = 'store_true', default = False, help = 'Deletes incomplete output files')
-    parser.add_argument('--checkpoint', action = 'store_true', default = False, help = 'Create new Pytables checkpoint in HDF5 file')
-    parser.add_argument('--force', action = 'store_true', default = False, help = 'Forces reloading of existing data')
-    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
-
-    args = parser.parse_args()
-
     logging.getLogger('CHARMMUtil')
 
     logging.basicConfig(level = args.loglevel)

@@ -136,20 +136,20 @@ def ParseOutput(filename):
             break
 
 
-    return charmmiter, e_history, tdip, qm_iterthresh, isenergyweird, isgrmsweird, isdone
+    return charmmiter, e_history, tdip, qm_iterthresh, isenergyweird, \
+        isgrmsweird, isdone
 
 
 if __name__ == '__main__':
-    from glob import glob
     from OSUtils import WildCardExpandedFileList
 
-    log = logging
-    log.setLevel(logging.INFO)
+    logger = logging.getLogger('ParseOutput')
+    logger.setLevel(logging.INFO)
     if len(sys.argv) < 2:
-        log.error('Please specify Q-Chem output files to parse')
+        logger.error('Please specify Q-Chem output files to parse')
         exit()
 
-    for filename in WildCardExpandedFileList(sys.argv[1:]):
-        log.info('Parsing Q-Chem output file '+filename)
-        output = ParseOutput(filename)
-        log.info(output)
+    for infilename in WildCardExpandedFileList(sys.argv[1:]):
+        logger.info('Parsing Q-Chem output file %s', infilename)
+        output = ParseOutput(infilename)
+        logger.info(output)

@@ -41,6 +41,7 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
 
     NOTE: The file will NOT be written to disk. issue a .write() manually as necessary!               
     '''
+
     #Load fixed charge specification in RTF file
     ChargeParameter = {}
     try:
@@ -58,7 +59,6 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file, CHARMM_RTFile, 
                     t = l.split()
                     AtomType, Charge = t[1].upper(), float(t[3])
                     ChargeParameter[AtomType] = Charge
-
 
     #Generate $external_charges and $molecule blocks for Q-Chem input
     QMbuf = ['0 1'] #XXX Hard-coded charge and spin!
