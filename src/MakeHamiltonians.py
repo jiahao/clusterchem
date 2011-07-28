@@ -19,7 +19,7 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
     for node in h5data.walkNodes():
         if node._v_name == 'Dipole':
             #Extract transition dipole from matrix
-            dipole = node[:,0,1]
+            dipole = node[:, 0, 1]
             
             #Look up geometry
             path = node._v_pathname.split('/')
@@ -36,7 +36,8 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
             atoms = [ x['Coord'] for x in geometry.iterrows() \
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
 
-            if len(atoms) != 2: continue #silently fail
+            if len(atoms) != 2:
+                continue #silently fail
             assert len(atoms) == 2, """\
 Wrong number of free base nitrogens in %r:%r
 Expected 2 but found %d
@@ -53,13 +54,15 @@ Coordinates:
                 excite = 0.0
 
             if norm(dipole) != 0.0:
-                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*norm(dipole)))
+                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*\
+                                                         norm(dipole)))
                 angle = min(angle, pi - angle)
 
                 if len(energies) > 2: #Try next higher state
                     newexcite = (energies[2] - energies[0])
-                    newdipole = node[:,0,2]
-                    newangle = arccos(dot(atomvec, newdipole)/(norm(atomvec)*norm(newdipole)))
+                    newdipole = node[:, 0, 2]
+                    newangle = arccos(dot(atomvec, newdipole)/\
+                                          (norm(atomvec)*norm(newdipole)))
                     newangle = min(newangle, pi - newangle)
                     if newangle < angle:
                         #print 'Root flip at', snapshot, resid
@@ -69,7 +72,8 @@ Coordinates:
 
             if snapshotidx not in data:
                 data[snapshotidx] = dict()
-            print snapshotidx, resididx, excite, dipole[0], dipole[1], dipole[2]
+            print snapshotidx, resididx, excite, dipole[0], dipole[1], \
+                dipole[2]
             data[snapshotidx][resididx] = (excite, dipole)
 
     h5data.close()
@@ -88,7 +92,8 @@ def ExtractMonomerDistances(h5file = 'h2pc-data.h5', data = None):
             path = node._v_pathname.split('/')
             snapshot = path[1]
             snapshot_idx = int(snapshot[5:])
-            if snapshot_idx not in distances: distances[snapshot_idx] = {}
+            if snapshot_idx not in distances:
+                distances[snapshot_idx] = {}
 
             for resid in data[snapshot_idx]:
                 #Find centroid of molecule
@@ -96,12 +101,14 @@ def ExtractMonomerDistances(h5file = 'h2pc-data.h5', data = None):
                     if x['ResID'] == str(resid)]
                 centroid = numpy.average(atoms, 0) * Angstrom
                 distances[snapshot_idx][resid] = centroid
-                print snapshot_idx, resid, centroid[0], centroid[1], centroid[2]
+                print snapshot_idx, resid, centroid[0], centroid[1], \
+                    centroid[2]
 
     return distances
 
 
-def PrintForsterDipoleCoupledHamiltonian(data, distances, MatlabFilename = 'Hamiltonians.mat'):
+def PrintForsterDipoleCoupledHamiltonian(data, distances,
+                                         MatlabFilename = 'Hamiltonians.mat'):
     hamiltonians = numpy.zeros((100, 128, 128))
 
     #Create sorted list to map indices
@@ -128,7 +135,8 @@ def PrintForsterDipoleCoupledHamiltonian(data, distances, MatlabFilename = 'Hami
                     print snapshot, residA, residB, energyA
                     hamiltonians[snapshot_idx, resA_idx, resB_idx] = energyA
                 else:
-                    distance = norm(distances[snapshot][residA] - distances[snapshot][residB])
+                    distance = norm(distances[snapshot][residA] - \
+                                    distances[snapshot][residB])
                     #Here we compute the Forster coupling matrix element
                     #which assumes dipole---dipole coupling
                     V = dot(dipoleA, dipoleB) / distance**3
@@ -144,8 +152,9 @@ def PrintForsterDipoleCoupledHamiltonian(data, distances, MatlabFilename = 'Hami
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
-    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
+    parser = argparse.ArgumentParser(description = 'Generates Hamiltonians')
+    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5',
+                        help = 'Name of HDF5 database file')
     args = parser.parse_args()
 
     print '\n\nEnergy and Transition dipole moment\n'

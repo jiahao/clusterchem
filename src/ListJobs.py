@@ -23,10 +23,6 @@ def ListJobsWithMissingData(filename = 'h2pc-data.h5',
     :param string mol_list: File containing list of relevant site ids.
 
     :returns: :rtype: None
-
-    .. TODO:: incorporate mol_list into database.
-
-    .. versionadded:: 0.1
     """
 
     badnodes = []
@@ -57,7 +53,7 @@ def ListJobsWithMissingData(filename = 'h2pc-data.h5',
             except tables.NoSuchNodeError:
                 badnodes.append((nodename+'/Dipole', 0))
                 
-    for n, (node, idx) in enumerate(badnodes):
+    for n, (node, _) in enumerate(badnodes):
         t = node.split('/')
         print n+1, t[1], t[4], 'td-nonpol'
 

@@ -3,33 +3,20 @@
 """
 Jiahao Chen <jiahao@mit.edu> 2011-02-18
 
-This script builds heavily upon the QM-MM wrapper scripts of Tim Kowalczyk, Lee-Ping Wang and Shane Yost.
+This script builds heavily upon the QM-MM wrapper scripts of Tim Kowalczyk,
+Lee-Ping Wang and Shane Yost.
 
 .. TODO:: UNTESTED.
 """
 
-import glob
-import os
-import sys
-import signal
+import glob, os, signal, sys
+from subprocess import Popen, PIPE, STDOUT
 
+from OSUtils import copywild
 
 def PrintHelp():
-    print "usage: "+sys.argv[0]+" [CHARMM input file name] [additional CHARMM input keywords]"
-
-
-
-def copywild(src, dest): #NOT recursive
-    import shutil
-    for filename in glob.glob(src):
-        if os.path.isfile(filename):
-            try:
-                shutil.copy(filename, os.path.join(src, dest))
-            except IOError, e:
-                print 'Warning, skipped',filename
-                print 'Error was:',e
-
-
+    print "usage: "+sys.argv[0]+" [CHARMM input file name] \
+[additional CHARMM input keywords]"
 
 
 def UnboundCHARMMVariables(InputFile, OtherInputs = ''):
@@ -37,7 +24,6 @@ def UnboundCHARMMVariables(InputFile, OtherInputs = ''):
 that are used but not defined.
 
 OtherInputs is an optional input that is additional command line input.
-
 """
 
     namespace = [x.split('=')[0] for x in OtherInputs.upper().split()]
@@ -60,7 +46,8 @@ OtherInputs is an optional input that is additional command line input.
 
 
 
-def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm', Overwrite = True):
+def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm',
+              Overwrite = True):
 
 
     if not Overwrite and os.path.exists(OutputFile):
@@ -70,14 +57,14 @@ def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm', Ove
     
     UnboundVars = UnboundCHARMMVariables(InputFile, OtherInputs)
     if len(UnboundVars) > 0:
-        assert False, 'ERROR: Unbound variables detected: '+' '.join(UnboundVars)
+        assert False, 'ERROR: Unbound variables detected: '+\
+            ' '.join(UnboundVars)
     
-    from subprocess import Popen, PIPE, STDOUT
-
     os.setpgrp() #create new process group, become its leader
 
     try:
-        p = Popen(CHARMMBin+' '+OtherInputs, stdin=PIPE, stdout=PIPE, stderr=STDOUT, bufsize=1, shell=True, close_fds=True)
+        p = Popen(CHARMMBin+' '+OtherInputs, stdin=PIPE, stdout=PIPE,
+                  stderr=STDOUT, bufsize=1, shell=True, close_fds=True)
         #p.stdin.write('\n'.join([open(InputFile).read(), OtherInputs]))
         p.stdin.write(open(InputFile).read())
         p.stdin.close()
@@ -100,7 +87,8 @@ if __name__ == '__main__':
         exit()
 
     #Make a scratch directory in user scratch space
-    ScratchDir = os.path.join('/scratch', os.environ['USER'], str(os.getpid())+'.qmmmpol')
+    ScratchDir = os.path.join('/scratch', os.environ['USER'], \
+                                  str(os.getpid())+'.qmmmpol')
     if not os.path.exists(ScratchDir):
         os.makedirs(ScratchDir)
     #Stage scratch directory
@@ -110,7 +98,7 @@ if __name__ == '__main__':
 
     CHARMMInput = sys.argv[1]
     CHARMMFileRoot = '.'.join(CHARMMInput.split('.')[:-1])
-    CHARMMOutput= CHARMMFileRoot + '.out'
+    CHARMMOutput = CHARMMFileRoot + '.out'
 
     #Save current PID
     os.environ['QMMMPOL_PID'] = str(os.getpid())

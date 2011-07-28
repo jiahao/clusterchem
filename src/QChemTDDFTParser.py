@@ -8,26 +8,33 @@ class DataRecorder:
         self.tddft_tda = []
         self.tddft = []
 
-    def Record(self, mode, StateIdx, Energy, Multiplicity, Dipole = None, OscillatorStrength = None, Amplitudes = None):
+    def Record(self, mode, StateIdx, Energy, Multiplicity, Dipole = None,
+               OscillatorStrength = None, Amplitudes = None):
         """
         Record parsed TDDFT data:
         :param string moder: Type of data ('dft', 'tddft-tda', or 'tddft')
-        :param integer StateIdx: Index of state (0 = ground, 1 = first excited...)
+        :param integer StateIdx: Index of state (0 = ground, 1 = first excited
+           ...)
         :param float Energy: Energy in atomic units
         :param integer Multiplicity: Spin multiplicity (1 = singlet)
         :param float(3) Dipole: Transition dipole from ground state (Optional)
-        :param float OscillatorStrength: Oscillator strength of transition (Optional)
+        :param float OscillatorStrength: Oscillator strength of transition
+        (Optional)
         :param dict Amplitudes: Transition amplitudes (Optional)
-        :type Amplitudes: the key of the dictionary is a integer 2-tuple representing the originating and destination orbitals respectively. The value is the amplitude.
+        :type Amplitudes: the key of the dictionary is a integer 2-tuple
+        representing the originating and destination orbitals respectively.
+        The value is the amplitude.
         """
 
         assert mode in ['dft', 'tddft-tda', 'tddft']
         if mode == 'dft':
             self.ground.append([Energy, Multiplicity])
         elif mode == 'tddft-tda':
-            self.tddft_tda.append([StateIdx, Energy, Multiplicity, Dipole, OscillatorStrength, Amplitudes])
+            self.tddft_tda.append([StateIdx, Energy, Multiplicity, Dipole,
+                                   OscillatorStrength, Amplitudes])
         elif mode == 'tddft':
-            self.tddft.append([StateIdx, Energy, Multiplicity, Dipole, OscillatorStrength, Amplitudes])
+            self.tddft.append([StateIdx, Energy, Multiplicity, Dipole,
+                               OscillatorStrength, Amplitudes])
 
 
     def GetEnergiesAndDipole(self):
@@ -45,7 +52,7 @@ class DataRecorder:
         #Initialize to NaN
         #TODO Update all code to use NaN convention
         TDAEnergies[:] = Energies[:] = numpy.NaN
-        TDADipole[:,:,:] = Dipole[:,:,:] = numpy.NaN
+        TDADipole[:, :, :] = Dipole[:, :, :] = numpy.NaN
 
         try:
             Energies[0] = self.ground[-1][0]
@@ -84,7 +91,8 @@ class DataRecorder:
         #TDATransitionAmplitudes = numpy.ndarray((maxstates, maxamplitudestda))
         #TransitionAmplitudes = numpy.ndarray((maxstates, maxamplitudestddft))
 
-        for stateid, _, multiplicity, _, strength, amplitudes in self.tddft_tda:
+        for stateid, _, multiplicity, _, strength, amplitudes in \
+                self.tddft_tda:
             TDAMultiplicities[stateid] = multiplicity
             TDAOscillatorStrengths[stateid] = strength
         
@@ -92,7 +100,8 @@ class DataRecorder:
             Multiplicities[stateid] = multiplicity
             OscillatorStrengths[stateid] = strength
 
-        return TDAMultiplicities, TDAOscillatorStrengths, Multiplicities, OscillatorStrengths
+        return TDAMultiplicities, TDAOscillatorStrengths, Multiplicities, \
+            OscillatorStrengths
 
 
 
@@ -149,8 +158,10 @@ def QChemTDDFTParser(filename):
             #    amplitude = float(t[-1])
             #    Amplitudes[(orbital_from, orbital_to)] = amplitude
             elif len(t) == 0: #Blank line
-                Data.Record(mode, StateIdx, Energy, Multiplicity, Dipole, OscillatorStrength, Amplitudes)
-                del StateIdx, Energy, Multiplicity, Dipole, OscillatorStrength, Amplitudes
+                Data.Record(mode, StateIdx, Energy, Multiplicity, Dipole, 
+                            OscillatorStrength, Amplitudes)
+                del StateIdx, Energy, Multiplicity, Dipole, \
+                    OscillatorStrength, Amplitudes
             elif '---------------------------------------------------' in line:
                 mode = 'scan'
 

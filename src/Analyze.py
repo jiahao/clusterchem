@@ -13,7 +13,9 @@ This is a standalone executable.
 .. versionadded:: 0.1
 """
 
-import logging, numpy, sys
+import logging, numpy, os, sys
+from numpy import dot, arccos, pi
+from numpy.linalg import norm
 from scipy.stats.kde import gaussian_kde
 from Units import eV
 
@@ -127,16 +129,12 @@ def analyze_h2pc_tdip(h5filename = 'h2pc-data.h5'):
     """Calculate the dot product of the transition dipole
     with the H-H cordinate vector"""
 
-    from numpy import dot, arccos, pi
-    from numpy.linalg import norm
-
-
     buf = []
-    h5data = tables.openFile(h5filename, mode = 'r')
+    h5data = tables.openFile(h5filename, 'r')
     for node in h5data.walkNodes():
         if node._v_name == 'Dipole':
             #Extract transition dipole from matrix
-            dipole = node[:,0,1]
+            dipole = node[:, 0, 1]
             
             #Look up geometry
             path = node._v_pathname.split('/')
@@ -144,14 +142,18 @@ def analyze_h2pc_tdip(h5filename = 'h2pc-data.h5'):
             snapshot = path[1]
 
             try:
-                geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
-            except tables.exceptions.NoSuchNodeError: continue
+                geometry = h5data.getNode(os.path.join('', snapshot,
+                               'CHARMM_CARD'))
+            except tables.exceptions.NoSuchNodeError:
+                continue
 
             #Extract basic hydrogens
             atoms = [ x['Coord'] for x in geometry.iterrows() \
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
 
-            if len(atoms) != 2: continue #silently fail
+            if len(atoms) != 2:
+                continue #silently fail
+
             assert len(atoms) == 2, """\
 Wrong number of free base nitrogens in %r:%r
 Expected 2 but found %d
@@ -168,13 +170,15 @@ Coordinates:
                 excite = 0.0
 
             if norm(dipole) != 0.0:
-                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*norm(dipole)))
+                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*\
+                                                         norm(dipole)))
                 angle = min(angle, pi - angle)
 
                 if len(energies) > 2: #Try next higher state
                     newexcite = (energies[2] - energies[0]) /eV
-                    newdipole = node[:,0,2]
-                    newangle = arccos(dot(atomvec, newdipole)/(norm(atomvec)*norm(newdipole)))
+                    newdipole = node[:, 0, 2]
+                    newangle = arccos(dot(atomvec, newdipole)/(norm(atomvec)*\
+                                    norm(newdipole)))
                     newangle = min(newangle, pi - newangle)
                     if newangle < angle:
                         #print 'Root flip at', snapshot, resid
@@ -187,9 +191,10 @@ Coordinates:
                 #buf.append((snapshot, resid, excite, angle))
                 if True or angle > 0.9 or excite > 2.1:
                     buf.append((snapshot, resid, excite, angle))
-                    idx = len(buf)
+                    #idx = len(buf)
                     #print idx, snapshot, resid, 'tddft-nonpol'
-                    print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
+                    print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.'\
+                        % angle
 
     #for idx, (snapshot, resid, excite, angle) in enumerate(buf):
     #    print snapshot, resid, '%10.6f eV' % excite, '%10.6f rad.' % angle
@@ -199,7 +204,8 @@ Coordinates:
     h5data.close()
 
 
-def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list', outtaskfile = 'sgearraytasklist-missing.txt'):
+def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list',
+    outtaskfile = 'sgearraytasklist-missing.txt'):
     """
     Scans the HDF5 file for missing data.
 
@@ -217,15 +223,14 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list', outt
     running with :py:mod:`SGEInterface`.
     """
 
-    from numpy import zeros
-
     logger = logging.getLogger('Analyze.LocateMissingData')
 
     resids = []
     for l in open(mollist):
         try:
             resids.append(str(int(l)))
-        except ValueError: pass
+        except ValueError:
+            pass
 
     #Names of data nodes and expected dimensions
     data = [('Energy', 2), ('Dipole', (3, 2, 2))]
@@ -260,9 +265,10 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list', outt
             coord = path[1]
             env   = path[2] #Fixed or WithDrude
             resid = path[-2]
-        except IndexError: continue
+        except IndexError:
+            continue
        
-        for name, dim in data:
+        for name, _ in data:
             if node._v_name == name:                
                 if name == 'Energy':
                     for energy in node:
@@ -295,16 +301,19 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list', outt
             f = open(outtaskfile, 'w')
             f.write('\n'.join(buf))
             f.close()
-            logger.warning('Wrote info on %d missing jobs to %s', n, outtaskfile)
+            logger.warning('Wrote info on %d missing jobs to %s', n,
+                           outtaskfile)
         else: #print to console
             logger.warning('%d missing jobs found:\n%s', n, '\n'.join(buf))
             
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description = 'Archives data into HDF5 database')
-    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5', help = 'Name of HDF5 database file')
-    parser.add_argument('--loglevel', action = 'store', default = logging.INFO, type = int, help = 'Logging level')
+    parser = argparse.ArgumentParser(description = 'Analyzes HDF5 database')
+    parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5',
+                        help = 'Name of HDF5 database file')
+    parser.add_argument('--loglevel', action = 'store', default = logging.INFO,
+                        type = int, help = 'Logging level')
     args = parser.parse_args()
 
     logging.basicConfig(level = args.loglevel)
