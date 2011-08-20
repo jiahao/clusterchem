@@ -3,6 +3,7 @@
 from twisted.internet import protocol, reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.utils import getProcessOutput
+from twisted.internet.task import LoopingCall
 
 import os
 

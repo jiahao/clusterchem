@@ -4,7 +4,7 @@
 Generates QM/MM electronic structure jobs and submits them to a Sun Grid
 Engine queue.
 """
-import logging, os
+import logging, os, sys, warnings
 from glob import glob
 
 import SGE
@@ -14,6 +14,9 @@ try:
     from HDF5Interface import CHARMM_RTF_Short, ResidList, OpenHDF5Table, \
         CHARMM_CARD, LoadCHARMM_CARD
     import tables
+    #Turn off NaturalNameWarning from PyTables
+    warnings.filterwarnings('ignore', category=tables.NaturalNameWarning)
+
 except ImportError:
     pass
 
@@ -64,13 +67,14 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         alljobs = []
 
         #Collect all data into HDF5 file
-        h5data = tables.openFile(h5filename, 'w')
+        h5data = tables.openFile(h5filename, 'a')
 
         #############################
         # Load in residues to do QM #
         #############################
         MolList = OpenHDF5Table(h5data, '/Model', 'MolList',
-            ResidList, DoOverwrite)
+            ResidList, 'List of molecule ids for which QM data exist',
+            DoOverwrite)
 
         if MolList is not None:
             for res_id in open('../mol.list'):
@@ -81,13 +85,14 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
                     data.append()
                 except ValueError:
                     pass
+            MolList.flush()
 
         ###############################################
         # Load in atomic charges from CHARMM topology #
         ###############################################
         for CHARMM_RTFile in glob(runpack+'.rtf'):
             RTF = OpenHDF5Table(h5data, '/Model', 'CHARMM_RTF',
-                CHARMM_RTF_Short, DoOverwrite, DoAppend = True)
+                CHARMM_RTF_Short, 'CHARMM Topology File', DoOverwrite, DoAppend = True)
 
             if RTF is not None:
                 for line in open(CHARMM_RTFile):
@@ -98,29 +103,29 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
                         data['Type'] = t[1]
                         data['Charge'] = float(t[3])
                         data.append()
-                    except ValueError:
-                        raise ValueError, 'Parse error in RTF:', CHARMM_RTFile
+                    except (ValueError, IndexError):
+                        pass
+            RTF.flush()
 
         #####################################
         # Load coordinates from CHARMM CARD #
         #####################################
-        for coordfile in glob('*.cor'):
+        for coordfile in []:#glob('*.cor'):
             logger.info('Adding CHARMM CARD: %s', coordfile)
             coordfileroot = coordfile.split('.')[0]
 
-            Coords = OpenHDF5Table(h5data, coordfileroot, 'CHARMM_RTF',
-                CHARMM_CARD, DoOverwrite)
+            Coords = OpenHDF5Table(h5data, '/'+coordfileroot, 'CHARMM_CARD',
+                CHARMM_CARD, 'CHARMM CARD File', DoOverwrite)
 
             if Coords is not None:
                 LoadCHARMM_CARD(Coords, coordfile)
 
             alljobs += iteratejobs(coordfileroot)
 
-        f = open(joblist, 'w')
-        for i, j in enumerate(alljobs):
-            f.write(str(i+1)+' \t')
-            f.write(' '.join(j) + '\n')
-        f.close()
+        with open(joblist, 'w') as f:
+            for i, j in enumerate(alljobs):
+                f.write(str(i+1)+' \t')
+                f.write(' '.join(j) + '\n')
 
         numjobs = len(alljobs)
         logger.info('Indexed %d jobs', numjobs)
@@ -130,7 +135,8 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     x.args.N = sge_jobname
     x.args.t = '1-'+str(numjobs)
     x.args.o = '$JOB_NAME.$JOB_ID.$TASK_ID.stdout.log'.replace('$', '\$')
-    x.args.command = 'python JobHandler.py --taskfile '+joblist
+    FullPathToJobHandler = os.path.dirname(sys.argv[0])+os.sep+'JobHandler.py'
+    x.args.command = 'python '+FullPathToJobHandler+' --taskfile '+joblist
     x.args.b = 'y'
     print '#To submit the array job, run this command:'
     x.execute(mode = 'echo')

@@ -9,15 +9,9 @@ Lee-Ping Wang and Shane Yost.
 .. TODO:: UNTESTED.
 """
 
-import glob, os, signal, sys
+import os, signal, sys
 from subprocess import Popen, PIPE, STDOUT
-
 from OSUtils import copywild
-
-def PrintHelp():
-    print "usage: "+sys.argv[0]+" [CHARMM input file name] \
-[additional CHARMM input keywords]"
-
 
 def UnboundCHARMMVariables(InputFile, OtherInputs = ''):
     """Checks a CHARMM input file for unbound variables (i.e. variables
@@ -48,6 +42,10 @@ OtherInputs is an optional input that is additional command line input.
 
 def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm',
               Overwrite = True):
+    """
+    Runs CHARMM
+    @todo document
+    """
 
 
     if not Overwrite and os.path.exists(OutputFile):
@@ -83,7 +81,8 @@ def RunCHARMM(InputFile, OutputFile, OtherInputs = '', CHARMMBin = 'charmm',
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
-        PrintHelp()
+        print "usage: "+sys.argv[0]+" [CHARMM input file name] \
+[additional CHARMM input keywords]"
         exit()
 
     #Make a scratch directory in user scratch space

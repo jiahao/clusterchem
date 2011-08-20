@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+"""
+HDF5 Interface classes and functions
+"""
+
 import logging, numpy, os, tables
 
 class CHARMM_RTF_Short(tables.IsDescription):
@@ -12,6 +16,10 @@ class CHARMM_RTF_Short(tables.IsDescription):
     #: Atomic charge
     Charge = tables.Float64Col()
 
+    def __init__(self):
+        tables.IsDescription.__init__(self)
+
+
 class ResidList(tables.IsDescription):
     """
     PyTables data structure containing a list of molecule residue lists
@@ -19,128 +27,8 @@ class ResidList(tables.IsDescription):
     #: Residue ID
     ResID = tables.UInt32Col()
 
-
-def OpenHDF5Table(h5data, where, name, description, title,
-    DoOverwrite = False, DoAppend = True):
-    """
-    @param h5data HDF5 file handler
-    @param where Parent group
-    @param name Name of new table
-    @param description Object describing table
-    @param title String description
-    @param DoOverwrite
-    @param DoAppend
-    """
-
-    logger = logging.getLogger('OpenHDF5Table')
-    try:
-        h5table = h5data.createTable(where, name, description, title,
-            createparents = True)
-    except tables.exceptions.NodeError:
-        if not DoOverwrite:
-            logger.info('HDF5 table already exists: %s: skipping.',
-                os.path.join(where, name))
-
-            if not DoAppend:
-                return None
-            else:
-                h5table = h5data.getNode(where, name)
-
-        logger.info('Overwriting existing %s in HDF5: %s',
-                   name, os.path.join(where, name))
-        h5data.removeNode(where, name)
-        
-        h5table = h5data.createTable(where, name, description, title,
-            createparents = True)
-
-    return h5table
-
-
-
-def RecordIntoHDF5CArray(data, h5data, location, name,
-    atom = tables.atom.FloatAtom(), DoOverwrite = False):
-    """Data to record
-       HDF5 file
-       Location in HDF5
-       Name to make"""
-
-    logger = logging.getLogger('Archive.RecordIntoHDF5CArray')
-
-    try:
-        myarray = h5data.createCArray(where = location, name = name,
-           atom = atom, shape = data.shape, createparents = True)
-    except tables.exceptions.NodeError:
-        #Already in there
-        if DoOverwrite:
-            logger.info('Overwriting existing HDF5 CArray: %s', 
-                        os.path.join(location, name))
-            myarray = h5data.getNode(location, name)
-            #Same shape? If not, delete and recreate
-            if myarray.shape != data.shape:
-                h5data.removeNode(where = location, name = name)
-                myarray = h5data.createCArray(where = location, title = name,
-                    name = name, atom = atom, shape = data.shape,
-                    createparents = True)
-        else:
-            logger.info('HDF5 CArray already exists: %s\nSkipping,', 
-                        os.path.join(location, name))
-            return
-
-    myarray[:] = data
- 
-    logger.info('Archiving HDF5 CArray %s:\n%s', os.path.join(location, name),
-                str(myarray[:]))
-
-
-
-def RecordIntoHDF5EArray(data, h5data, location, name, position = None,
-    atom = tables.atom.FloatAtom(), DoOverwrite = False):
-
-    logger = logging.getLogger('Archive.RecordIntoHDF5EArray')
-
-    #Currently hard coded for one-dimensional arrays
-    try:
-        myarray = h5data.createEArray(where = location, name = name,
-                      atom = atom, shape = (0,), title = name,
-                      expectedrows = 2, createparents = True)
-    except tables.exceptions.NodeError:
-        #Already in there
-        if DoOverwrite:
-            myarray = h5data.getNode(location, name)
-        else:
-            logger.info('HDF5 EArray already exists: %s\nSkipping.',
-                        os.path.join(location, name))
-            return
-
-    #Data is either a scalar or an entire array
-    #If scalar, position MUST be specified
-
-    try:
-        N = len(data)
-        while N > len(myarray):
-            myarray.append([numpy.NaN])
-
-        myarray[:] = data
-        logger.info('Archiving HDF5 EArray %s:', os.path.join(location, name))
-        for idx, datum in enumerate(data):
-            logger.info('Archived '+str(datum)+' in position '+str(idx))
-    except TypeError:
-        if position == None:
-            logger.error("""Requested archival of scalar datum into EArray but \
-position in EArray was not given.
-Datum was NOT archived.""")
-            return
-
-        while position >= len(myarray):
-            myarray.append([numpy.NaN])
-        
-        myarray[position] = data
-
-        logger.info('Archiving HDF5 EArray %s:', os.path.join(location, name))
-        logger.info('Archived %s in position %s', str(data), str(position))
-
-
-
+    def __init__(self):
+        tables.IsDescription.__init__(self)
 
 
 class CHARMM_CARD(tables.IsDescription):
@@ -166,7 +54,6 @@ class CHARMM_CARD(tables.IsDescription):
 
     def __init__(self):
         tables.IsDescription.__init__(self)
-
 
 
 def LoadCHARMM_CARD(h5table, CARDfile):
@@ -215,3 +102,143 @@ Expected %d but only %d atoms were received.""", numatoms, thisnumatoms)
     logger.info('Loaded CHARMM file %s into HDF5 table %s', CARDfile,
                 str(h5table))
     h5table.flush()
+
+
+def OpenHDF5Table(h5data, where, name, description, title,
+    DoOverwrite = False, DoAppend = True):
+    """
+    @param h5data HDF5 file handler
+    @param where Parent group
+    @param name Name of new table
+    @param description Object describing table
+    @param title String description
+    @param DoOverwrite
+    @param DoAppend
+    """
+
+    logger = logging.getLogger('OpenHDF5Table')
+    try:
+        h5table = h5data.createTable(where, name, description, title,
+            createparents = True)
+    except tables.exceptions.NodeError:
+        if not DoOverwrite:
+            logger.info('HDF5 table already exists: %s: skipping.',
+                os.path.join(where, name))
+
+            if not DoAppend:
+                return None
+            else:
+                h5table = h5data.getNode(where, name)
+
+        logger.info('Overwriting existing %s in HDF5: %s',
+                   name, os.path.join(where, name))
+        h5data.removeNode(where, name)
+        
+        h5table = h5data.createTable(where, name, description, title,
+            createparents = True)
+
+    return h5table
+
+
+def RecordIntoHDF5CArray(data, h5data, location, name,
+    atom = tables.atom.FloatAtom(), DoOverwrite = False):
+    """
+    Puts data into HDF5 CArray.
+
+    If destination does not exist, will be automatically created.
+
+    @param data Data to record
+    @param h5data HDF5 file
+    @param location Location in HDF5
+    @param name Name to make
+    @param atom Pytables data type to record
+    @param DoOverwrite whether to overwrite existing data
+    """
+
+    logger = logging.getLogger('Archive.RecordIntoHDF5CArray')
+
+    try:
+        myarray = h5data.createCArray(where = location, name = name,
+           atom = atom, shape = data.shape, createparents = True)
+    except tables.exceptions.NodeError:
+        #Already in there
+        if DoOverwrite:
+            logger.info('Overwriting existing HDF5 CArray: %s', 
+                        os.path.join(location, name))
+            myarray = h5data.getNode(location, name)
+            #Same shape? If not, delete and recreate
+            if myarray.shape != data.shape:
+                h5data.removeNode(where = location, name = name)
+                myarray = h5data.createCArray(where = location, title = name,
+                    name = name, atom = atom, shape = data.shape,
+                    createparents = True)
+        else:
+            logger.info('HDF5 CArray already exists: %s\nSkipping,', 
+                        os.path.join(location, name))
+            return
+
+    myarray[:] = data
+ 
+    logger.info('Archiving HDF5 CArray %s:\n%s', os.path.join(location, name),
+                str(myarray[:]))
+
+
+def RecordIntoHDF5EArray(data, h5data, location, name, position = None,
+    atom = tables.atom.FloatAtom(), DoOverwrite = False):
+
+    """
+    Puts data into HDF5 CArray.
+
+    If destination does not exist, will be automatically created.
+
+    @param data Data to record
+    Data is either a scalar or an entire array.
+    If scalar, position MUST be specified.
+    @param h5data HDF5 file
+    @param location Location in HDF5
+    @param name Name to make
+    @param position EArray index to insert at. (Optional)
+    @param atom Pytables data type to record
+    @param DoOverwrite whether to overwrite existing data
+
+    @note Currently hard coded for one-dimensional arrays
+    """
+
+    logger = logging.getLogger('Archive.RecordIntoHDF5EArray')
+
+    try:
+        myarray = h5data.createEArray(where = location, name = name,
+                      atom = atom, shape = (0,), title = name,
+                      expectedrows = 2, createparents = True)
+    except tables.exceptions.NodeError:
+        #Already in there
+        if DoOverwrite:
+            myarray = h5data.getNode(location, name)
+        else:
+            logger.info('HDF5 EArray already exists: %s\nSkipping.',
+                        os.path.join(location, name))
+            return
+
+    try:
+        N = len(data)
+        while N > len(myarray):
+            myarray.append([numpy.NaN])
+
+        myarray[:] = data
+        logger.info('Archiving HDF5 EArray %s:', os.path.join(location, name))
+        for idx, datum in enumerate(data):
+            logger.info('Archived '+str(datum)+' in position '+str(idx))
+    except TypeError:
+        if position == None:
+            logger.error("""Requested archival of scalar datum into EArray but \
+position in EArray was not given.
+Datum was NOT archived.""")
+            return
+
+        while position >= len(myarray):
+            myarray.append([numpy.NaN])
+        
+        myarray[position] = data
+
+        logger.info('Archiving HDF5 EArray %s:', os.path.join(location, name))
+        logger.info('Archived %s in position %s', str(data), str(position))

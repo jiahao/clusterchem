@@ -41,12 +41,14 @@ if __name__ == '__main__':
                         help = 'Deletes files after parsing')
     parser.add_argument('--nukeinc', action = 'store_true', default = False,
                         help = 'Deletes incomplete output files')
-    parser.add_argument('--checkpoint', action = 'store_true', default = False,
+    parser.add_argument('--checkpoint', action = 'store_true', default = True,
                         help = 'Create new Pytables checkpoint in HDF5 file')
     parser.add_argument('--force', action = 'store_true', default = False,
                         help = 'Forces reloading of existing data')
     parser.add_argument('--loglevel', action = 'store', default = logging.INFO,
                         type = int, help = 'Logging level')
+    parser.add_argument('--logfile', action = 'store', default = None,
+                        help = 'Name of log file to write')
     args = parser.parse_args()
 
 
@@ -179,8 +181,10 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
                 Coords = OpenHDF5Table(h5data, location, 'CHARMM_CARD',
                     CHARMM_CARD, 'CHARMM CARD coordinates', DoOverwrite)
 
-                if Coords is not None:
-                    LoadCHARMM_CARD(Coords, cwdfile)
+                try:
+                    Coords[0]
+                except IndexError:
+                    pass#LoadCHARMM_CARD(Coords, cwdfile)
 
             ####################################
             # Parse CHARMM or Q-Chem output file
@@ -354,9 +358,14 @@ particle positions but I'm not!")
 
 
 if __name__ == '__main__':
-    logging.getLogger('CHARMMUtil')
 
-    logging.basicConfig(level = args.loglevel)
+    logging.getLogger('Archiver')
+
+    if args.logfile is None:
+        import sys
+        logging.basicConfig(level = args.loglevel, stream = sys.stdout)
+    else:
+        logging.basicConfig(level = args.loglevel, filename = args.logfile)
 
     LoadEmUp(args.workingdir, args.h5file, args.nuke, args.nukeinc,
              args.checkpoint, args.force)

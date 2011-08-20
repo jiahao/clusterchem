@@ -10,6 +10,15 @@ If run as a standalone script, executes :py:func:`ListJobsWithMissingData`.
 
 import tables
 
+if __name__ == '__main__':
+        import argparse
+        parser = argparse.ArgumentParser(description = 'Lists missing jobs in HDF5 file')
+        parser.add_argument('--h5file', action = 'store', default = 'h2pc-data.h5',
+            help = 'Name of HDF5 database file')
+        parser.add_argument('--mollist', action = 'store', default = '../mol.list',
+            help = 'Name of residue list file')
+        args = parser.parse_args()
+
 def ListJobsWithMissingData(filename = 'h2pc-data.h5',
     mol_list = '/home/cjh/rmt/inputdata/mol.list'):
     """
@@ -29,7 +38,11 @@ def ListJobsWithMissingData(filename = 'h2pc-data.h5',
 
     resids = []
     for l in open(mol_list):
-        resids.append(l.strip())
+        try:
+            resid = int(l)
+            resids.append(str(resid))
+        except ValueError:
+            pass
 
     h5data = tables.openFile(filename, mode = 'r')
 
@@ -55,10 +68,10 @@ def ListJobsWithMissingData(filename = 'h2pc-data.h5',
                 
     for n, (node, _) in enumerate(badnodes):
         t = node.split('/')
-        print n+1, t[1], t[4], 'td-nonpol'
+        print n+1, t[1], t[4], 'tddft-nonpol'
 
 
 
 if __name__ == '__main__':
-    ListJobsWithMissingData()
+    ListJobsWithMissingData(args.h5file, args.mollist)
 

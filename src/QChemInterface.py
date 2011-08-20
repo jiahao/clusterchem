@@ -152,6 +152,7 @@ print_input               false
 qm_mm                     true
 qmmm_print                true
 skip_charge_self_interact true
+print_orbitals            true
 """)
 
     Q.GetCurrentJob().write_input_section('cdft', """\

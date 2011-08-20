@@ -77,8 +77,9 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
     linkwild(os.path.join('..', '..', '*'), '.')
 
     #Link coordinate file
-    os.symlink(os.path.join('..', '..', '..', corfileroot+'.cor'),
-               corfileroot.upper()+'.COR')
+    if not os.path.exists(corfileroot.upper()+'.COR'):
+        os.symlink(os.path.join('..', '..', '..', corfileroot+'.cor'),
+            corfileroot.upper()+'.COR')
 
     if '-nonpol' in jobtype:
         charmmcardfile = corfileroot+'.COR'
@@ -109,6 +110,8 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
         Q.write('qchem.working.in')
         Q.execute('qchem.out', qchemcmd = qchemcmd, parse = False)
     elif jobtype == 'tddft-nonpol':
+        print 'Running nonpolarizable QM/MM TDDFT for \
+                resid =', resid
         Q = QChemInput('QCHEM-TDDFT.IN')
         Q = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
                 rtfiles, Q)
@@ -149,13 +152,13 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
                 ', '.join([os.path.abspath(f) for f in filenames])
             print 'Regenerating state descriptions using default rem blocks'
 
-            Q1 = QChemInput('QCHEM-GROUND.IN')
+            Q1 = QChemInput('QCHEM-GROUNG')
             Q1 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
-                    'h2pc.rtf', Q1)
+                    ['h2pc.rtf', 'znpc.rtf'], Q1)
 
-            Q2 = QChemInput('QCHEM-DSCF.IN')
-            Q2 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
-                    'h2pc.rtf', Q2)
+            Q1 = QChemInput('QCHEM-DSCF')
+            Q1 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
+                    ['h2pc.rtf', 'znpc.rtf'], Q1)
 
             Q = QChemInputForTransitionDipole(Q1, Q2)
 
