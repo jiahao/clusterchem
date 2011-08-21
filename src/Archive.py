@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 """
-Archives data into a :term:`HDF5` database.
+Archives data into a HDF5 database.
 
-This is a standalone executable requiring :term:`PyTables`
-and the homebrew :py:mod:`QChemIO`.
-
-.. versionadded:: 0.1
+This is a standalone executable requiring PyTables
+and the homebrew QChemIO.
 
 """
 
@@ -25,6 +23,7 @@ from HDF5Interface import CHARMM_CARD, LoadCHARMM_CARD, RecordIntoHDF5EArray, \
     RecordIntoHDF5CArray, OpenHDF5Table
 
 from QChemTDDFTParser import QChemTDDFTParser
+from QChemIO import QChemInput
 
 if __name__ == '__main__':
     import argparse
@@ -45,9 +44,9 @@ if __name__ == '__main__':
                         help = 'Create new Pytables checkpoint in HDF5 file')
     parser.add_argument('--force', action = 'store_true', default = False,
                         help = 'Forces reloading of existing data')
-    parser.add_argument('--loglevel', action = 'store', default = logging.INFO,
-                        type = int, help = 'Logging level')
-    parser.add_argument('--logfile', action = 'store', default = None,
+    parser.add_argument('--loglevel', action = 'store', default = 'info',
+                help = 'Logging level (debug, info, warning, error, critical)')
+    parser.add_argument('-l', '--logfile', action = 'store', default = None,
                         help = 'Name of log file to write')
     args = parser.parse_args()
 
@@ -64,6 +63,14 @@ def CheckIfRunning(filename = None, taskfile = args.taskfile):
     """
 
     logger = logging.getLogger('Archive.CheckIfRunning')
+
+    #If taskfile doesn't exist, assume it's not running
+    try:
+        open(taskfile).close()
+    except IOError:
+        logger.warning("""Cannot open taskfile %s
+Assuming not running anymore""", taskfile)
+        return False
 
     #Break down filename into job info
     filename_token = filename.split(os.sep)
@@ -99,7 +106,7 @@ Assuming not running anymore""", filename)
 
 
 
-def RunQChemAgain(filename):
+def RunQChemAgain(filename, inputfile = None):
     """
     Rewrite Q-Chem input deck with different convergence algorithm.
     DIIS --> 
@@ -113,11 +120,67 @@ def RunQChemAgain(filename):
     If MOM is to be used to aid
     convergence, an SCF without MOM should be run to determine when the SCF
     starts oscillating. MOM should be set to start just before the oscillation
+
+
+    If input file is None, then assume same directory as filename + qchem.working.in
+
+    returns False if nothing was done, True if a new input was written.
     """
 
     #TODO
     logger = logging.getLogger('Archive.RunQChemAgain')
-    logger.critical('Run again manually: %s', filename)
+
+    #What was the error?
+    mode = 'seek'
+    skiplines = 0
+    error = ''
+    for line in open(filename):
+        if skiplines > 0:
+            skiplines -= 1
+            continue
+
+        if mode == 'seek':
+            if 'Q-Chem fatal error occurred' in line:
+                skiplines = 1
+                mode = 'readerror'
+                error = ''
+        elif mode == 'readerror':
+            if line.strip() == '':
+                break #Assume no more error to read if blank line found; done
+            else:
+                error += line
+
+    if inputfile is None:
+        inputfile = os.path.join(os.path.dirname(filename), 'qchem.working.in')
+
+    try:
+        with open(inputfile) as f:
+            pass
+    except IOError:
+        logger.error('Error detected in output file %s but input file %s \
+was not found\nRun again manually: %s', filename, inputfile, filename)
+        return False
+
+    error = error.strip()
+
+    if error == 'MaxIt Reached in CisIt0':
+        #Need to increase MAX_CIS_CYCLES
+        newinput = QChemInput(inputfile)
+        current_value = newinput.GetCurrentJob().rem_get('max_cis_cycles')
+        if current_value is None: #Assume it's 30
+            current_value = 30
+
+        #Double it and try again
+        newinput.GetCurrentJob().rem_set('max_cis_cycles', str(2*current_value))
+        newinput.write()
+        return True
+
+    else:
+        logger.critical("""Error in %s was: %s
+I don't know how to deal with this error.
+Run again manually: %s""", filename, error, inputfile)
+
+
     return False
 
 
@@ -150,8 +213,12 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
     logger = logging.getLogger('Archive.LoadEmUp')
 
     compress = tables.Filters(complevel = 9, complib = 'zlib')
+
+
     h5data = tables.openFile(h5filename, mode = 'a', filters = compress,
         title = 'H2Pc')
+    logger.info('Opening HDF5 file: %s', h5filename)
+
     if not h5data.isUndoEnabled():
         h5data.enableUndo(filters = compress)
 
@@ -345,27 +412,42 @@ particle positions but I'm not!")
             if len(filenames) > 0:
                 logger.info('Cleaning up SGE stdout/stderr streams in ' + root)
 
+            num_errors = 0
             for filename in filenames:
-                os.unlink(filename)
+                haserror = False
+                for line in open(filename):
+                    if 'Traceback (most recent call last):' in line:
+                        #Uh-oh, Python crashed
+                        haserror = True
+                        break
+                if not haserror:
+                    os.unlink(filename)
+                else:
+                    num_errors += 1
 
+            if num_errors > 0:
+                logger.warning("""Found %d jobs that crashed!
+Forcing jobs on hold as a precaution. Use qalter -h U -u $USER to resume.""")
+                from subprocess import Popen, PIPE, STDOUT
+                Popen('qhold -u $USER')
 
     if h5data.isUndoEnabled() and DoCheckPoint:
         mark = h5data.mark()
-        logger.info('Checkpointing HDF5 database at mark point '+str(mark))
+        logger.info('Checkpointing HDF5 database at mark point %d', mark)
 
     h5data.close()
 
 
 
 if __name__ == '__main__':
+    import sys
+    logging.basicConfig(level = getattr(logging, args.loglevel.upper()),
+                        stream = sys.stdout)
 
-    logging.getLogger('Archiver')
-
-    if args.logfile is None:
-        import sys
-        logging.basicConfig(level = args.loglevel, stream = sys.stdout)
-    else:
-        logging.basicConfig(level = args.loglevel, filename = args.logfile)
+    if args.logfile is not None:
+        #Add another log handler to duplicate output to file and stdout
+        logfile = logging.FileHandler(args.logfile)
+        logging.getLogger('').addHandler(logfile)
 
     LoadEmUp(args.workingdir, args.h5file, args.nuke, args.nukeinc,
              args.checkpoint, args.force)
