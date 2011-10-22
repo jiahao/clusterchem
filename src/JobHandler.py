@@ -61,6 +61,7 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
     .. versionadded:: 0.1
     """
 
+    logger = logging.getLogger('domyjob')
     #Historical note: prior to the installation of qchem40.beta,
     #the executable used was
     #qchem= '/home/tkowalcz/qchem/qchem-2ecoupling/linux64/exe/qcprog.exe'
@@ -77,9 +78,12 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
     linkwild(os.path.join('..', '..', '*'), '.')
 
     #Link coordinate file
-    if not os.path.exists(corfileroot.upper()+'.COR'):
+    try:
         os.symlink(os.path.join('..', '..', '..', corfileroot+'.cor'),
             corfileroot.upper()+'.COR')
+    except OSError, e:
+        logger.warning('Python reported error making symlink to %s: %s. Ignoring'
+                , corfileroot.upper()+'.COR', e)
 
     if '-nonpol' in jobtype:
         charmmcardfile = corfileroot+'.COR'
@@ -152,12 +156,12 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
                 ', '.join([os.path.abspath(f) for f in filenames])
             print 'Regenerating state descriptions using default rem blocks'
 
-            Q1 = QChemInput('QCHEM-GROUNG')
+            Q1 = QChemInput('QCHEM-GROUND')
             Q1 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
                     ['h2pc.rtf', 'znpc.rtf'], Q1)
 
-            Q1 = QChemInput('QCHEM-DSCF')
-            Q1 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
+            Q2 = QChemInput('QCHEM-DSCF')
+            Q2 = QChemInputForElectrostaticEmbedding(resid, charmmcardfile,
                     ['h2pc.rtf', 'znpc.rtf'], Q1)
 
             Q = QChemInputForTransitionDipole(Q1, Q2)

@@ -36,17 +36,18 @@ if __name__ == '__main__':
     parser.add_argument('--taskfile', action = 'store',
                         default = 'sgearraytasklist.txt',
                         help = 'Name of SGE array task file')
-    parser.add_argument('--nuke', action = 'store_true', default = False,
+    parser.add_argument('-n', '--nuke', action = 'store_true', default = False,
                         help = 'Deletes files after parsing')
     parser.add_argument('--nukeinc', action = 'store_true', default = False,
                         help = 'Deletes incomplete output files')
     parser.add_argument('--checkpoint', action = 'store_true', default = True,
                         help = 'Create new Pytables checkpoint in HDF5 file')
-    parser.add_argument('--force', action = 'store_true', default = False,
+    parser.add_argument('-f', '--force', action = 'store_true', default = False,
                         help = 'Forces reloading of existing data')
     parser.add_argument('--loglevel', action = 'store', default = 'info',
                 help = 'Logging level (debug, info, warning, error, critical)')
-    parser.add_argument('-l', '--logfile', action = 'store', default = None,
+    parser.add_argument('-l', '--logfile', action = 'store',
+                        default = 'archival.log',
                         help = 'Name of log file to write')
     args = parser.parse_args()
 
@@ -174,7 +175,17 @@ was not found\nRun again manually: %s', filename, inputfile, filename)
         newinput.GetCurrentJob().rem_set('max_cis_cycles', str(2*current_value))
         newinput.write()
         return True
-
+    elif error == '':
+        #Execution terminated early
+        #Is there a coredump?
+        try:
+            open('core', 'rb').close()
+            #There is a coredump
+            #Now what?
+        except IOError: #No file
+            #Terminated early with no good reason?
+            pass
+            
     else:
         logger.critical("""Error in %s was: %s
 I don't know how to deal with this error.
@@ -265,7 +276,11 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
                 calctype = os.path.split(root)[1]
 
                 State = Energy = Energies = Dipole = Environment = None
-                data = ParseOutput(filename)
+                try:
+                    data = ParseOutput(filename)
+                except IOError: #file gone
+                    logger.warning('File %s disappeared before it could be \
+parsed.')
                 isDone = data[-1]
                 EnergyList = data[1]
                 Dipole = data[2]
@@ -413,12 +428,14 @@ particle positions but I'm not!")
                 logger.info('Cleaning up SGE stdout/stderr streams in ' + root)
 
             num_errors = 0
+            error_jobs = set()
             for filename in filenames:
                 haserror = False
                 for line in open(filename):
                     if 'Traceback (most recent call last):' in line:
                         #Uh-oh, Python crashed
                         haserror = True
+                        error_jobs.add(filename.split('.')[1])
                         break
                 if not haserror:
                     os.unlink(filename)
@@ -427,9 +444,10 @@ particle positions but I'm not!")
 
             if num_errors > 0:
                 logger.warning("""Found %d jobs that crashed!
-Forcing jobs on hold as a precaution. Use qalter -h U -u $USER to resume.""")
+Holding rest of job array: jobids %s.
+Use qalter -h U -u $USER to resume.""", num_errors, ' '.join(error_jobs))
                 from subprocess import Popen, PIPE, STDOUT
-                Popen('qhold -u $USER')
+                Popen('qhold '+' '.join(error_jobs), shell=True)
 
     if h5data.isUndoEnabled() and DoCheckPoint:
         mark = h5data.mark()

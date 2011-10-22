@@ -7,6 +7,7 @@ Engine queue.
 import logging, os, sys, warnings
 from glob import glob
 
+from CHARMMUtil import dedrude
 import SGE
 
 #Compatibility kludge
@@ -58,11 +59,15 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     logger = logging.getLogger('SGEInterface.PrepareJobs')
 
     if os.path.exists(joblist) and not DoOverwrite:
-        print 'Skipping population of', joblist
+        logger.info('Skipping population of %s', joblist)
         #count numjobs
         numjobs = 0
-        for _ in open(joblist):
-            numjobs += 1
+        for line in open(joblist):
+            len_line = len(line.split())
+            if len_line == 4:
+                numjobs += 1
+            elif len_line != 0:
+                raise ValueError, 'Invalid format of line:' + line
     else:
         alljobs = []
 
@@ -110,7 +115,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         #####################################
         # Load coordinates from CHARMM CARD #
         #####################################
-        for coordfile in []:#glob('*.cor'):
+        for coordfile in glob('*.cor'):
             logger.info('Adding CHARMM CARD: %s', coordfile)
             coordfileroot = coordfile.split('.')[0]
 
@@ -134,6 +139,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     x = SGE.qsubOptions()
     x.args.N = sge_jobname
     x.args.t = '1-'+str(numjobs)
+    x.args.p = '-500'
     x.args.o = '$JOB_NAME.$JOB_ID.$TASK_ID.stdout.log'.replace('$', '\$')
     FullPathToJobHandler = os.path.dirname(sys.argv[0])+os.sep+'JobHandler.py'
     x.args.command = 'python '+FullPathToJobHandler+' --taskfile '+joblist
