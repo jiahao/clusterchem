@@ -18,7 +18,6 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
     h5data = tables.openFile(h5filename, mode = 'r')
     for node in h5data.walkNodes():
         if node._v_name == 'Dipole':
-            #Extract transition dipole from matrix
             dipole = node[:, 0, 1]
             
             #Look up geometry
@@ -28,16 +27,18 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
             snapshotidx = int(snapshot[5:])
             resididx = int(resid)
 
-            try:
-                geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
-            except tables.exceptions.NoSuchNodeError: continue
+            #Extract transition dipole from matrix
+            #try:
+            #    geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
+            #except tables.exceptions.NoSuchNodeError: continue
+            geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
 
             #Extract basic hydrogens
             atoms = [ x['Coord'] for x in geometry.iterrows() \
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
 
-            if len(atoms) != 2:
-                continue #silently fail
+            #if len(atoms) != 2:
+            #    continue #silently fail
             assert len(atoms) == 2, """\
 Wrong number of free base nitrogens in %r:%r
 Expected 2 but found %d
@@ -103,13 +104,14 @@ def ExtractMonomerDistances(h5file = 'h2pc-data.h5', data = None):
                 distances[snapshot_idx][resid] = centroid
                 print snapshot_idx, resid, centroid[0], centroid[1], \
                     centroid[2]
-
     return distances
 
 
 def PrintForsterDipoleCoupledHamiltonian(data, distances,
                                          MatlabFilename = 'Hamiltonians.mat'):
-    hamiltonians = numpy.zeros((100, 128, 128))
+    hamiltonians = numpy.zeros((128, 128, 100))
+    coordinates = numpy.zeros((128, 3, 100))
+    dipoles = numpy.zeros((128, 3, 100))
 
     #Create sorted list to map indices
     snapshot_map = [snapshot for snapshot in data]
@@ -118,7 +120,10 @@ def PrintForsterDipoleCoupledHamiltonian(data, distances,
     for idx, entry in enumerate(snapshot_map):
         snapshot_mapper[entry] = idx
 
-    resid_map = [resid for resid in data[1000]]
+    for snapshot, snapshot_data in data.items():
+        resid_map = [resid for resid in snapshot_data]
+        break
+
     resid_map.sort()
     resid_mapper = {}
     for idx, entry in enumerate(resid_map):
@@ -133,19 +138,24 @@ def PrintForsterDipoleCoupledHamiltonian(data, distances,
                 resB_idx = resid_mapper[residB]
                 if residA == residB:
                     print snapshot, residA, residB, energyA
-                    hamiltonians[snapshot_idx, resA_idx, resB_idx] = energyA
+                    hamiltonians[resA_idx, resB_idx, snapshot_idx] = energyA
+                    dipoles[resA_idx, :, snapshot_idx]= dipoleA
+                    coordinates[resA_idx, :, snapshot_idx]=distances[snapshot][residA]
                 else:
-                    distance = norm(distances[snapshot][residA] - \
-                                    distances[snapshot][residB])
+                    R = (distances[snapshot][residA] - \
+                         distances[snapshot][residB])
+                    distance = norm(R)
+                    nR = R / distance
                     #Here we compute the Forster coupling matrix element
                     #which assumes dipole---dipole coupling
-                    V = dot(dipoleA, dipoleB) / distance**3
-                    hamiltonians[snapshot_idx, resA_idx, resB_idx] = V
+                    V = (3 * dot(dipoleA, nR) * dot(dipoleB, nR) - \
+                            dot(dipoleA, dipoleB)) / distance**3
+                    hamiltonians[resA_idx, resB_idx, snapshot_idx] = V
                     print snapshot, residA, residB, V
 
     #Write Matlab file
     from scipy.io import savemat
-    savemat(MatlabFilename, {'Hamiltonians':hamiltonians})
+    savemat(MatlabFilename, {'Hamiltonians':hamiltonians, 'Coordinates':coordinates, 'Dipoles':dipoles})
 
     return hamiltonians
 
@@ -163,4 +173,4 @@ if __name__ == '__main__':
     distances = ExtractMonomerDistances(args.h5file, data)
     print '\n\nHamiltonians\n'
     hamiltonians = PrintForsterDipoleCoupledHamiltonian(data, distances)
-
+    
