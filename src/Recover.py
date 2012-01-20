@@ -15,7 +15,7 @@ from Units import kcal_mol
 from HDF5Interface import RecordIntoHDF5CArray, RecordIntoHDF5EArray
 
 
-def RecoverFromLog(h5filename, bzlogfilename)
+def RecoverFromLog(h5filename, bzlogfilename):
     mode = 'seek'
     doflush = False
     buf = []
@@ -53,7 +53,7 @@ def RecoverFromLog(h5filename, bzlogfilename)
                 if parseme != '':
                     try:
                         data = numpy.array(eval(parseme))
-                    except SyntaxError:
+                    except (NameError, SyntaxError):
                         pass
                     buf = []
               

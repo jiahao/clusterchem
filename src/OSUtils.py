@@ -16,8 +16,10 @@ def chdirn(thedir):
     :param string thedir: The name of the directory to go to.
     :returns: None 
     """
-    if not os.path.exists(thedir):
+    try:
         os.mkdir(thedir)
+    except OSError: #Directory exists
+        pass
     os.chdir(thedir)
 
 

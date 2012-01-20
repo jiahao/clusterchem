@@ -48,7 +48,7 @@ if __name__ == '__main__':
                 help = 'Logging level (debug, info, warning, error, critical)')
     parser.add_argument('-l', '--logfile', action = 'store',
                         default = 'archival.log',
-                        help = 'Name of log file to write')
+                        help = 'Name of log file to write (Default: archival.log; specify None to disable')
     args = parser.parse_args()
 
 
@@ -245,11 +245,32 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
             ##############################
             # Parse CHARMM coordinate file
             ##############################
+            if len(cwdfile) > 6 and cwdfile[-6:] == '.d.cor':
+                #Here is a CARD with Drude particles
+                #does an equivalent card without Drudes exist?
+                newfile = filename[:-5]+'cor'
+                if os.path.exists(newfile):
+                    continue
 
-            if len(cwdfile) > 4 \
+                from CHARMMUtil import dedrude
+                targetfile = os.path.join(root, newfile)
+                dedrude(filename, newfile)
+                logging.info('Stripped Drude particles from %s', cwdfile)
+                
+                cwdh5name = cwdfile[:-6]
+                location = os.path.join('/' + root, cwdh5name)
+
+                Coords = OpenHDF5Table(h5data, location, 'CHARMM_CARD',
+                    CHARMM_CARD, 'CHARMM CARD coordinates', DoOverwrite)
+
+                try:
+                    Coords[90]
+                except IndexError:
+                    LoadCHARMM_CARD(Coords, targetfile)
+                    
+            elif len(cwdfile) > 4 \
                 and cwdfile[-4:] == '.cor' \
                 and cwdfile[-6:-4] != '.d':
-
                 # CARDs with Drude particles are skipped since they
                 # will need to be re-equilibrated as part of the SCF process
 
@@ -260,16 +281,15 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
                     CHARMM_CARD, 'CHARMM CARD coordinates', DoOverwrite)
 
                 try:
-                    Coords[0]
+                    Coords[90]
                 except IndexError:
-                    pass#LoadCHARMM_CARD(Coords, cwdfile)
-
+                    LoadCHARMM_CARD(Coords, cwdfile)
+                    
             ####################################
             # Parse CHARMM or Q-Chem output file
             ####################################
 
             if len(cwdfile) > 4 and cwdfile[-4:] == '.out':
-
                 #Assume path has the structure [.../]GeomName/Site/jobtype
                 Site = root.split(os.sep)[-2]
                 GeometryName = root.split(os.sep)[-3]
@@ -338,7 +358,7 @@ particle positions but I'm not!")
                         TDAEnergies /= kcal_mol
                     if Energies != None:
                         Energies /= kcal_mol
-               
+                        print Energies               
                 elif cwdfile == 'qchem.out':
                     #Assume all energy calculations go through the
                     #CHARMM/Q-Chem interface.
@@ -459,13 +479,12 @@ Use qalter -h U -u $USER to resume.""", num_errors, ' '.join(error_jobs))
 
 if __name__ == '__main__':
     import sys
-    logging.basicConfig(level = getattr(logging, args.loglevel.upper()),
-                        stream = sys.stdout)
-
-    if args.logfile is not None:
+    logger = logging.getLogger('Archive')
+    logger.setLevel(getattr(logging, args.loglevel.upper()))
+    if args.logfile != 'None':
         #Add another log handler to duplicate output to file and stdout
         logfile = logging.FileHandler(args.logfile)
-        logging.getLogger('').addHandler(logfile)
+        logger.addHandler(logfile)
 
     LoadEmUp(args.workingdir, args.h5file, args.nuke, args.nukeinc,
              args.checkpoint, args.force)

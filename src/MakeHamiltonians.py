@@ -28,11 +28,10 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
             resididx = int(resid)
 
             #Extract transition dipole from matrix
-            #try:
-            #    geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
-            #except tables.exceptions.NoSuchNodeError: continue
-            geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
-
+            try:
+                geometry = h5data.getNode('/'+snapshot+'/CHARMM_CARD')
+            except tables.exceptions.NoSuchNodeError: continue
+            
             #Extract basic hydrogens
             atoms = [ x['Coord'] for x in geometry.iterrows() \
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
@@ -96,6 +95,10 @@ def ExtractMonomerDistances(h5file = 'h2pc-data.h5', data = None):
             if snapshot_idx not in distances:
                 distances[snapshot_idx] = {}
 
+            if snapshot_idx not in data:
+                print 'No data found for ', snapshot_idx
+                continue
+
             for resid in data[snapshot_idx]:
                 #Find centroid of molecule
                 atoms = [ x['Coord'] for x in geometry.iterrows() \
@@ -109,9 +112,6 @@ def ExtractMonomerDistances(h5file = 'h2pc-data.h5', data = None):
 
 def PrintForsterDipoleCoupledHamiltonian(data, distances,
                                          MatlabFilename = 'Hamiltonians.mat'):
-    hamiltonians = numpy.zeros((128, 128, 100))
-    coordinates = numpy.zeros((128, 3, 100))
-    dipoles = numpy.zeros((128, 3, 100))
 
     #Create sorted list to map indices
     snapshot_map = [snapshot for snapshot in data]
@@ -126,15 +126,30 @@ def PrintForsterDipoleCoupledHamiltonian(data, distances,
 
     resid_map.sort()
     resid_mapper = {}
+
     for idx, entry in enumerate(resid_map):
         resid_mapper[entry] = idx
+
+    system_size = len(resid_mapper)
+    num_samples = len(snapshot_mapper)
+    
+    hamiltonians = numpy.empty((system_size, system_size, num_samples))
+    coordinates = numpy.empty((system_size, 3, num_samples))
+    dipoles = numpy.empty((system_size, 3, num_samples))
+    hamiltonians[:] = numpy.NAN
+    coordinates[:] = numpy.NAN
+    dipoles[:] = numpy.NAN
 
     for snapshot, snapshot_data in data.items():
         snapshot_idx = snapshot_mapper[snapshot]
 
         for residA, (energyA, dipoleA) in snapshot_data.items():
+            if residA not in resid_mapper:
+                continue
             resA_idx = resid_mapper[residA]
             for residB, (energyB, dipoleB) in snapshot_data.items():
+                if residB not in resid_mapper:
+                    continue
                 resB_idx = resid_mapper[residB]
                 if residA == residB:
                     print snapshot, residA, residB, energyA

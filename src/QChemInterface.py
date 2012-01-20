@@ -8,7 +8,6 @@ passing command-line arguments to it.
 
 Requires the homebrew :py:mod:`QChemIO` module.
 """
-
 from copy import deepcopy
 import QChemIO
 
@@ -25,9 +24,9 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file,
     coordinates
     :type CHARMM_CARD_file: string
 
-    :parameter CHARMM_RTFile: Name of CHARMM Residue Topology File containing
+    :parameter CHARMM_RTFile: Iterable containing names of CHARMM Residue Topology File containing
     force field parameters (notably, atomic charges)
-    :type CHARMM_RTFile: string or iterable
+    :type CHARMM_RTFile: iterable
 
     :parameter InputDeck: Q-Chem input deck. (Optional.) \
     If value is a string, is treated as a filename for QChemInput object. \
@@ -48,21 +47,35 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file,
 
     #Load fixed charge specification in RTF file
     ChargeParameter = {}
-    try:
-        for l in open(CHARMM_RTFile):
-            if l[:4].upper() == 'ATOM':
-                t = l.split()
-                AtomType, Charge = t[1].upper(), float(t[3])
-                ChargeParameter[AtomType] = Charge
 
-    except TypeError:
-        #Not a string, assume it's an iterable of strings
-        for filename in CHARMM_RTFile:
-            for l in open(filename):
-                if l[:4].upper() == 'ATOM':
-                    t = l.split()
-                    AtomType, Charge = t[1].upper(), float(t[3])
-                    ChargeParameter[AtomType] = Charge
+    #This helps map CHARMM atoms into Q-Chem atoms using a very hokey method
+    MassToQChemElement = {
+        1.008: 1,
+        12.011: 6,
+        14.007: 7,
+        15.997: 8,
+        15.999: 8,
+        26.982: 13,
+    }
+
+    CHARMMToQChemAtomTypes = {}
+
+    #Parse CHARMM RTFs
+    for filename in CHARMM_RTFile:
+        for l in open(filename):
+            t = l.split()
+            if l[:4].upper() == 'MASS':
+                #Recognize element by mass rather than element label
+                #since labels are arbitrary in CHARMM
+                Element, Mass = t[2].upper(), float(t[3])
+                assert Mass in MassToQChemElement, 'Unknown element with mass %f amu' % Mass
+                CHARMMToQChemAtomTypes[Element] = MassToQChemElement[Mass]
+                    
+            elif l[:4].upper() == 'ATOM':
+                AtomType, Element, Charge = t[1].upper(), t[2].upper(), float(t[3])
+                assert Element in CHARMMToQChemAtomTypes, 'Unknown element '+Element
+                assert AtomType not in ChargeParameter, 'Parameter clash!'
+                ChargeParameter[AtomType] = CHARMMToQChemAtomTypes[Element], Charge
 
     #Generate $external_charges and $molecule blocks for Q-Chem input
     QMbuf = ['0 1'] #XXX Hard-coded charge and spin!
@@ -73,11 +86,12 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file,
             AtomType, x, y, z, thisResID = t[3].upper(), float(t[4]), \
                 float(t[5]), float(t[6]), t[8]
             if thisResID == ResID: #QM region
-                QMbuf.append(AtomType[0]+('%15.8f'*3) % (x, y, z))
-            else:
+                QChemElement, _ = ChargeParameter[AtomType]
+                QMbuf.append(str(QChemElement)+('%15.8f'*3) % (x, y, z))
+            else: #MM region
                 assert AtomType in ChargeParameter, 'ERROR: Could not find \
-charge parameter for '+AtomType+' in '+CHARMM_RTFile
-                charge = ChargeParameter[AtomType]
+charge parameter for '+AtomType+' in '+' '.join(list(CHARMM_RTFile))
+                _, charge = ChargeParameter[AtomType]
                 MMbuf.append(('%15.8f\t'*4) % (x, y, z, charge)) 
 
     #Make Q-Chem input deck

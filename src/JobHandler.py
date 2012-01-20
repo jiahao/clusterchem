@@ -97,7 +97,7 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
             os.unlink(filename)
             print 'Deleted existing output file', filename
 
-    rtfiles = ('h2pc.rtf', 'znpc.rtf')
+    rtfiles = glob('*.rtf')
 
     if jobtype == 'gs-nonpol':
         #RunQMMM('h2pc.in', charmmcardfile, 'QCHEM-GROUND.IN', resid)
