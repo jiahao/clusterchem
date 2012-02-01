@@ -7,8 +7,6 @@ and the homebrew QChemIO.
 
 """
 
-#TODO SHOULD WE ARCHIVE ELECTRONIC STRUCTURE CONVERGENCE INFORMATION?
-
 from glob import glob
 import logging, os, shutil, tables, warnings
 
@@ -263,9 +261,7 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
                 Coords = OpenHDF5Table(h5data, location, 'CHARMM_CARD',
                     CHARMM_CARD, 'CHARMM CARD coordinates', DoOverwrite)
 
-                try:
-                    Coords[90]
-                except IndexError:
+                if Coords.nrows < 1:
                     LoadCHARMM_CARD(Coords, targetfile)
                     
             elif len(cwdfile) > 4 \
@@ -280,11 +276,9 @@ def LoadEmUp(path = '.', h5filename = 'h2pc-data.h5', Nuke = False,
                 Coords = OpenHDF5Table(h5data, location, 'CHARMM_CARD',
                     CHARMM_CARD, 'CHARMM CARD coordinates', DoOverwrite)
 
-                try:
-                    Coords[90]
-                except IndexError:
-                    LoadCHARMM_CARD(Coords, cwdfile)
-                    
+                if Coords.nrows < 1:
+                    LoadCHARMM_CARD(Coords, filename)
+              
             ####################################
             # Parse CHARMM or Q-Chem output file
             ####################################
@@ -348,6 +342,7 @@ particle positions but I'm not!")
 
                 elif 'tddft' in calctype:
                     QCtddft = QChemTDDFTParser(filename)
+                    if QCtddft is None: continue #Incomplete file
                     TDAEnergies, TDADipole, Energies, Dipole = \
                         QCtddft.GetEnergiesAndDipole()
                     TDAMultiplicities, TDAOscillatorStrengths, \
@@ -395,22 +390,25 @@ particle positions but I'm not!")
                                          DoOverwrite = DoOverwrite)
 
                 if 'tddft' in calctype: #Store also TDA energies and dipoles
-                    RecordIntoHDF5EArray(TDAEnergies * kcal_mol, h5data,
-                        location, 'TDAEnergy', DoOverwrite = DoOverwrite)
-                    RecordIntoHDF5CArray(TDADipole, h5data, location,
-                        'TDADipole', DoOverwrite = DoOverwrite)
-                    RecordIntoHDF5CArray(TDAMultiplicities, h5data, location,
-                        'TDAMultiplicities', atom = tables.atom.IntAtom(),
-                        DoOverwrite = DoOverwrite)
-                    RecordIntoHDF5CArray(Multiplicities, h5data, location,
-                        'Multiplicities', atom = tables.atom.IntAtom(),
-                        DoOverwrite = DoOverwrite)
-                    RecordIntoHDF5CArray(TDAOscillatorStrengths, h5data,
-                        location, 'TDAOscillatorStrengths',
-                        DoOverwrite = DoOverwrite)
-                    RecordIntoHDF5CArray(OscillatorStrengths, h5data, location,
-                        'OscillatorStrengths', DoOverwrite = DoOverwrite)
-
+                    try:  
+                        RecordIntoHDF5EArray(TDAEnergies * kcal_mol, h5data,
+                            location, 'TDAEnergy', DoOverwrite = DoOverwrite)
+                        RecordIntoHDF5CArray(TDADipole, h5data, location,
+                            'TDADipole', DoOverwrite = DoOverwrite)
+                        RecordIntoHDF5CArray(TDAMultiplicities, h5data, location,
+                            'TDAMultiplicities', atom = tables.atom.IntAtom(),
+                            DoOverwrite = DoOverwrite)
+                        RecordIntoHDF5CArray(Multiplicities, h5data, location,
+                            'Multiplicities', atom = tables.atom.IntAtom(),
+                            DoOverwrite = DoOverwrite)
+                        RecordIntoHDF5CArray(TDAOscillatorStrengths, h5data,
+                            location, 'TDAOscillatorStrengths',
+                            DoOverwrite = DoOverwrite)
+                        RecordIntoHDF5CArray(OscillatorStrengths, h5data, location,
+                            'OscillatorStrengths', DoOverwrite = DoOverwrite)
+                    except TypeError: #No data returns None - something here will complain
+                                      #usually the unit conversion from kcal_mol
+                        pass
                 ############
                 # Clean up #
                 ############

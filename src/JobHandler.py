@@ -174,6 +174,10 @@ def domyjob(corfileroot, resid, jobtype, overwrite = False, qchemcmd = 'qchem'):
     else:
         assert False, 'Unknown jobtype '+str(jobtype)
 
+    #Trash input file
+    os.unlink('qchem.working.in')
+    os.unlink('efield.dat')
+
     #Return to old directory
     os.chdir(olddir)
 

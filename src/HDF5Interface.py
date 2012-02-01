@@ -118,22 +118,16 @@ def OpenHDF5Table(h5data, where, name, description, title,
 
     logger = logging.getLogger('OpenHDF5Table')
     try:
-        h5table = h5data.createTable(where, name, description, title,
-            createparents = True)
-    except tables.exceptions.NodeError:
-        if not DoOverwrite:
-            logger.info('HDF5 table already exists: %s: skipping.',
-                os.path.join(where, name))
+        h5table = h5data.getNode(where, name)
+        if DoOverwrite:
+           logger.info('Overwriting existing %s in HDF5: %s',
+                      name, os.path.join(where, name))
+           h5data.removeNode(where, name)
+           
+           h5table = h5data.createTable(where, name, description, title,
+               createparents = True)
 
-            if not DoAppend:
-                return None
-            else:
-                h5table = h5data.getNode(where, name)
-
-        logger.info('Overwriting existing %s in HDF5: %s',
-                   name, os.path.join(where, name))
-        h5data.removeNode(where, name)
-        
+    except tables.exceptions.NodeError: #Table does not exist
         h5table = h5data.createTable(where, name, description, title,
             createparents = True)
 

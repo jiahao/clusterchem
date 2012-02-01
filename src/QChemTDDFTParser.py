@@ -104,7 +104,18 @@ class DataRecorder:
             OscillatorStrengths
 
 
+#Graceful error handler
+def hello(myfunc):
+    def wrapped_func(filename):
+        try:
+            return myfunc(filename)
+        except (UnboundLocalError, IndexError, ValueError):
+            print 'Output truncated in', filename
+            return None
+    return wrapped_func
+                
 
+@hello
 def QChemTDDFTParser(filename):
     mode = 'scan'
     skiplines = 0

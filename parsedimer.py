@@ -29,7 +29,7 @@ https://github.com/jiahao/openqube
 # Parameters
 #
 
-BrightStateStrengthThreshold = 0.2 
+BrightStateStrengthThreshold = 0.00000002 
 ChargeChangeThreshold = 0.03 #At least this much charge must change
 
 #

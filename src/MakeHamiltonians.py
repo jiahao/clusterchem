@@ -36,39 +36,46 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
             atoms = [ x['Coord'] for x in geometry.iterrows() \
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
 
-            #if len(atoms) != 2:
-            #    continue #silently fail
-            assert len(atoms) == 2, """\
+            if len(atoms) == 2: #XXX I have arbitrarily assumed that this is H2PC
+                continue #silently fail
+                assert len(atoms) == 2, """\
 Wrong number of free base nitrogens in %r:%r
 Expected 2 but found %d
 Coordinates:
 """ % (snapshot, resid, len(atoms)) + '\n'.join([str(x) for x in atoms])
-            
-            atomvec = atoms[1] - atoms[0]
-
-            #Extract energies
-            try:
-                energies = h5data.getNode('/'.join(path[:-1]+['Energy']))
-                excite = (energies[1] - energies[0])
-            except (IndexError, tables.exceptions.NoSuchNodeError):
-                excite = 0.0
-
-            if norm(dipole) != 0.0:
-                angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*\
-                                                         norm(dipole)))
-                angle = min(angle, pi - angle)
-
-                if len(energies) > 2: #Try next higher state
-                    newexcite = (energies[2] - energies[0])
-                    newdipole = node[:, 0, 2]
-                    newangle = arccos(dot(atomvec, newdipole)/\
-                                          (norm(atomvec)*norm(newdipole)))
-                    newangle = min(newangle, pi - newangle)
-                    if newangle < angle:
-                        #print 'Root flip at', snapshot, resid
-                        angle = newangle
-                        excite = newexcite
-                        dipole = newdipole
+                
+                atomvec = atoms[1] - atoms[0]
+    
+                #Extract energies
+                try:
+                    energies = h5data.getNode('/'.join(path[:-1]+['Energy']))
+                    excite = (energies[1] - energies[0])
+                except (IndexError, tables.exceptions.NoSuchNodeError):
+                    excite = 0.0
+    
+                if norm(dipole) != 0.0:
+                    angle = arccos(dot(atomvec, dipole)/(norm(atomvec)*\
+                                                             norm(dipole)))
+                    angle = min(angle, pi - angle)
+    
+                    if len(energies) > 2: #Try next higher state
+                        newexcite = (energies[2] - energies[0])
+                        newdipole = node[:, 0, 2]
+                        newangle = arccos(dot(atomvec, newdipole)/\
+                                              (norm(atomvec)*norm(newdipole)))
+                        newangle = min(newangle, pi - newangle)
+                        if newangle < angle:
+                            #print 'Root flip at', snapshot, resid
+                            angle = newangle
+                            excite = newexcite
+                            dipole = newdipole
+            else: #XXX No special check for the transition dipole
+                try:
+                    energies = h5data.getNode('/'.join(path[:-1]+['Energy']))
+                    excite = (energies[1] - energies[0])
+                except (IndexError, tables.exceptions.NoSuchNodeError):
+                    excite = 0.0
+    
 
             if snapshotidx not in data:
                 data[snapshotidx] = dict()
