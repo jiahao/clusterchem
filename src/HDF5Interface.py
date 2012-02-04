@@ -11,6 +11,8 @@ class CHARMM_RTF_Short(tables.IsDescription):
     PyTables data structure containing some CHARMM RTF information
     pertaining to atomic charges
     """
+    #: Residue Type
+    Resid = tables.StringCol(4)
     #: Atom Type
     Type = tables.StringCol(4)
     #: Atomic charge
