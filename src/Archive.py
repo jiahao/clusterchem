@@ -81,8 +81,11 @@ Assuming not running anymore""", taskfile)
     tasklist = []
     for line in open(taskfile):
         tasklist.append(line.split())
-    myjobids = [job[0] for job in tasklist if job[1] == myjobtype and 
+    try:
+        myjobids = [job[0] for job in tasklist if job[1] == myjobtype and 
                 job[2] == mymol and job[3] == mysnapshot]
+    except IndexError:
+        myjobids = []
 
     if len(myjobids) == 0: 
         logger.warning("""Cannot find job array corresponding to %s

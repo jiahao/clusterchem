@@ -56,6 +56,7 @@ def QChemInputForElectrostaticEmbedding(ResID, CHARMM_CARD_file,
         15.997: 8,
         15.999: 8,
         26.982: 13,
+        65.390: 30,
     }
 
     CHARMMToQChemAtomTypes = {}
