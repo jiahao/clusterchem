@@ -82,7 +82,14 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
             DoOverwrite)
 
         if MolList is not None:
-            for res_id in open('../mol.list'):
+            if os.path.exists('../mol.list'):
+                MolListFileName = '../mol.list'
+            elif os.path.exists('mol.list'):
+                MolListFileName = 'mol.list'
+            else:
+                raise ValueError, "Could not find list of molecule IDs"
+
+            for res_id in open(MolListFileName):
                 logger.info('Adding mol.list')
                 try:
                     data = MolList.row
@@ -149,7 +156,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
 
 
 def iteratejobs(corfileroot, isPolarizable = False, jobtypes = ('tddft',),
-        mollist = '../mol.list'):
+        mollist = 'mol.list'):
     """
     Creates a hierarchy of subdirectories in corefileroot
     of the form 'resid/jobtype' and return information about the jobs created.
@@ -218,7 +225,7 @@ if __name__ == '__main__':
         False, help = 'Continue calculation even output file exists')
 
     parser.add_argument('--qcprog', action = 'store', default = \
-        'qchem40', help = 'Name of Q-Chem binary to execute')
+        'qchem40.beta', help = 'Name of Q-Chem binary to execute')
 
     parser.add_argument('--loglevel', action = 'store', default=logging.INFO,
             type = int, help = 'Logging level')
