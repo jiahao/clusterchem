@@ -102,7 +102,7 @@ def LoadCHARMM_CARD(h5table, CARDfile):
 Expected %d but only %d atoms were received.""", numatoms, thisnumatoms)
 
     logger.info('Loaded CHARMM file %s into HDF5 table %s', CARDfile,
-                str(h5table))
+                h5table.name)
     h5table.flush()
 
 
