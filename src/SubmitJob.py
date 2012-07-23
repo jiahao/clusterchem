@@ -73,14 +73,15 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     #    run calculations.                                            #
     ###################################################################
 
-    if not os.path.exists(h5filename):
-        logging.info('Creating new HDF5 file: %s', h5filename)
-        h5data = tables.openFile(h5filename,'a')
-    else:
+    try:
         h5data = tables.openFile(h5filename, 'r')
-    
-    logging.debug('HDF5 file opened: %s', h5filename)
-    ToLoad = list()
+        logger.debug('HDF5 file opened: %s', h5filename)
+        hasHDF5 = True
+    except IOError:
+        logger.info('HDF5 file not found: %s', h5filename)
+        hasHDF5 = False 
+
+    ToLoad = list() # Keep track of things we should load into HDF5 file
 
     # A. Does file contain a non-empty MolList?
     #    MolList is the list of molecule (CHARMM residue IDs) to generate
@@ -90,9 +91,13 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         assert numMols > 0
         logger.info('QM/MM calculations will be generated for %d molecules',
                 numMols)
-    except (AssertionError, tables.NoSuchNodeError):
-        logger.info('No MolList found.')
-        ToLoad.append('MolList')
+    except (AssertionError, UnboundLocalError, tables.NoSuchNodeError):
+        if os.path.exists('mol.list'):
+            logger.info('No MolList found. Loading from mol.list')
+            ToLoad.append('MolList')
+        else:
+            logger.error('No mol.list found in directory')
+            ToLoad.append('ERROR')
 
     # B. Are there CHARMMM CARD coordinates in the current directory that
     #    are not already in the HDF5 file?
@@ -100,7 +105,11 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     #This code will fail if there is this file.
     assert not os.path.exists("Model.cor"), "Name collision with internal data table /Model! I don't know how to deal with this."
     CHARMM_CARDFiles=glob('*.cor')
-    InternalCHARMM_CARDs = [entry._v_name+'.cor' for entry in h5data.listNodes('/')]
+    try:
+        InternalCHARMM_CARDs = [entry._v_name+'.cor' for entry in h5data.listNodes('/')]
+    except UnboundLocalError:
+        InternalCHARMM_CARDs = []
+
     ToLoadCHARMM_CARDs = set(CHARMM_CARDFiles) - set(InternalCHARMM_CARDs)
 
     for CHARMM_CARDSkipped in set(InternalCHARMM_CARDs) & set(CHARMM_CARDFiles):
@@ -110,15 +119,25 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         for crd in ToLoadCHARMM_CARDs:
             logger.debug('Will load CHARMM CARD: %s', crd)
     else:
-        logger.info('Did not find any CHARMM CARDs to load.')
+        if len(InternalCHARMM_CARDs) == 0:
+            logger.error('Did not find any CHARMM CARDs to load.')
+            ToLoad.append('ERROR')
+        else:
+            logger.info('Did not find any CHARMM CARDs to load.')
 
     # C. Does the file already contain charge data from CHARMM RTF files?
     try:
         h5rtf = h5data.getNode('/Model', 'CHARMM_RTF')
         assert h5rtf.nrows > 0
         logger.info('CHARMM RTF data found in HDF5 file, skipping any RTFs present in directory')
-    except (AssertionError, tables.NoSuchNodeError):
-        logger.info('No RTF found.')
+    except (AssertionError, UnboundLocalError, tables.NoSuchNodeError):
+        ToLoadCHARMM_RTFs = glob("*.rtf")
+        if len(ToLoadCHARMM_RTFs) == 0:
+            logger.error('No RTFs found in current directory')
+            ToLoad.append('ERROR')
+        else:
+            logger.info('No RTFs found in HDF5 file. Loading RTFs in current directory: %s')
+
         ToLoad.append('RTF')
     
     # D. Do we have Q-Chem input templates in the current director that?
@@ -126,7 +145,7 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
     QChemInputTemplates=glob('QCHEM-*.IN')
     try:
         InternalTemplates = ['QCHEM-'+entry._v_name+'.IN' for entry in h5data.listNodes('/Model/QChemTemplates')]
-    except tables.NoSuchNodeError:
+    except (UnboundLocalError, tables.NoSuchNodeError):
         InternalTemplates = []
     ToLoadTemplates = set(QChemInputTemplates) - set(InternalTemplates)
 
@@ -137,25 +156,38 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         for crd in ToLoadTemplates:
             logger.debug('Will load Q-Chem template: %s', crd)
     else:
-        logger.info('Did not find any Q-Chem input templates to load.')
+        if len(InternalTemplates) == 0:
+            logger.error('Did not find any Q-Chem input templates to load.')
+            ToLoad.append('ERROR')
+        else:
+            logger.info('Did not find any Q-Chem input templates to load.')
 
     # E. Does the file already contain a list of jobs to be run?
     try:
         numJobs = h5data.getNode('/Model', 'JobsToRun').nrows
         assert numJobs > 0
         logger.info('Existing job schedule found.')
-    except (AssertionError, tables.NoSuchNodeError):
-        logger.info('No job schedule found. Will generate a new one.')
+    except (AssertionError, UnboundLocalError, tables.NoSuchNodeError):
+        logger.info('No existing job schedule found.')
         ToLoad.append('Jobs')
     
-    h5data.close()
+    if hasHDF5:
+        h5data.close()
+    else:
+        # Job list can be regenerated
+        if 'ERROR' in ToLoad:
+            logger.critical('Not all the required files were found.')
+            return
     
     ###################################################################
     # 2. Load up necessary data                                       #
     ###################################################################
     
     #XXX HOW TO LOCK FILE??? WHAT IF THERE ARE JOBS RUNNING?
-    h5data = tables.openFile(h5filename, 'a')
+    if not os.path.exists(h5filename):
+        logging.info('Creating new HDF5 file: %s', h5filename)
+
+    h5data = tables.openFile(h5filename,'a')
 
     # A. Load up MolList
     if 'MolList' in ToLoad:
@@ -177,6 +209,8 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
 
     # B. Load up CHARMM CRDs
     alljobs = []
+    PresentAtomTypes = set() # Keep track of atom types
+    PresentMolIDs = set() #Keep track of molecule ids
     for coordfile in ToLoadCHARMM_CARDs:
         logger.info('Adding CHARMM CARD: %s', coordfile)
         coordfileroot = coordfile.split('.')[0]
@@ -187,9 +221,13 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
         if Coords is not None:
             LoadCHARMM_CARD(Coords, coordfile)
 
+        PresentAtomTypes = PresentAtomTypes | set(Coords.cols.Type) # add any new atom types from this card
+        PresentMolIDs = PresentMolIDs | set(Coords.cols.ResID)
+
         alljobs += iteratejobs(coordfileroot)
 
     # C. Load up charge data in CHARMM RTF
+    DefinedAtomTypes = set()
     if 'RTF' in ToLoad:
         for CHARMM_RTFile in glob('*.rtf'):
             logger.info('Adding CHARMM RTF: %s', CHARMM_RTFile)
@@ -208,12 +246,12 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
                     data.append()
                 except (ValueError, IndexError):
                     pass
-            break #REMOVE ME
+            DefinedAtomTypes = DefinedAtomTypes | set(RTF.cols.Type)
+
         if len(glob('*.rtf'))==0:
             raise ValueError, """No RTF files found in current directory.
 
 Cannot continue without atomic charges for QM/MM electrostatic embedding."""
-
 
     # D. Load up Q-Chem input templates
     for QChemTemplate in ToLoadTemplates:
@@ -278,7 +316,6 @@ Cannot continue without atomic charges for QM/MM electrostatic embedding."""
             logger.debug('Job taskID %7d: %s %s %s', idx+1, crd, resid, jobtype)
         logger.info('Enumerated %d jobs for SGE job array', len(alljobs))
 
-    h5data.close()
    
     ###################################################################
     # 3. Verify input                                                 #
@@ -286,10 +323,20 @@ Cannot continue without atomic charges for QM/MM electrostatic embedding."""
     #TODO  
     # AB. Check that MolList actually iterates over molecules that exist
     #     in each CHARMM CRD
+    UnknownResIDs = set(MolList.cols.ResID) - PresentMolIDs
+    if len(UnknownResIDs)) > 0:
+        logging.error('There are unknown molecules which are iterated over: %s', ', '.join(str(UnknownResIDs))
+
     # C.  Check that CHARMM RTF specifies charges for ALL atom types
-    # TODO Import from JobHandler.py
+    
+    UndefinedAtomTypes = PresentAtomTypes - DefinedAtomTypes
+    if len(UndefinedAtomTypes) > 0:
+        logger.critical("There are undefined atom types:\n%s",'\n'.join(UndefinedAtomTypes) )
+
     # D. Run a sample Q-Chem input to make sure it is not insane
     # E. Regenerate jobs list
+    
+    h5data.close()
 
     ###################################################################
     # 4. Submit job to the queue                                      #
