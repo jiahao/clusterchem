@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#pylint: disable=W0212
 """
 Analyze
 ~~~~~~~
@@ -261,12 +262,12 @@ def LocateMissingData(h5filename = 'h2pc-data.h5', mollist = '../mol.list',
     n = 0
     for node in h5data:
         path = node._v_pathname.split('/')
-        try:
-            coord = path[1]
-            env   = path[2] #Fixed or WithDrude
-            resid = path[-2]
-        except IndexError:
+        if len(path) <= 3:
             continue
+            
+        coord = path[1]
+        #env   = path[2] #Fixed or WithDrude
+        resid = path[-2]
        
         for name, _ in data:
             if node._v_name == name:                

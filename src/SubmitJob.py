@@ -44,9 +44,9 @@ def PrepareJobs(runpack = '/home/cjh/rmt/runpack/*',
 
     This does the following:
         1. Scans all files in the current directory for files matching
-           @c \*.d.cor, which will be assumed to be :term:`CHARMM card file` s
-           containing coordinates for the molecular system, and also Drude
-           particles. For each such file, it will generate the corresponding
+           @c \*.cor, which will be assumed to be :term:`CHARMM card file` s
+           containing coordinates for the molecular system.
+           For each such file, it will generate the corresponding
            :term:`CHARMM card file` s without Drude particles using dedrude().
 
         1. Copies files specified by runpack using linkwild() to a
@@ -334,7 +334,6 @@ Cannot continue without atomic charges for QM/MM electrostatic embedding."""
         logger.critical("There are undefined atom types:\n%s",'\n'.join(UndefinedAtomTypes) )
 
     # D. Run a sample Q-Chem input to make sure it is not insane
-    # E. Regenerate jobs list
     
     h5data.close()
 

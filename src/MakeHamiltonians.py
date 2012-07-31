@@ -37,7 +37,7 @@ def ExtractEnergyAndTdip(h5filename = 'h2pc-data.h5'):
                       if x['ResID'] == resid and 'NQ' in x['Type'] ]
 
             if len(atoms) == 2: #XXX I have arbitrarily assumed that this is H2PC
-                continue #silently fail
+                #continue #silently fail
                 assert len(atoms) == 2, """\
 Wrong number of free base nitrogens in %r:%r
 Expected 2 but found %d
